@@ -61,11 +61,11 @@ public:
 	// --- PARAMETRI PER LA GENERAZIONE PROCEDURALE (PERLIN NOISE) ---
 
 	// Seed casuale per avere mappe diverse ad ogni esecuzione
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MapConfig")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	int32 RandomSeed;
 
 	// Scala del Perlin Noise (più basso = colline più dolci, più alto = variazioni brusche)
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MapConfig")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	float NoiseScale;
 
 	// Moltiplicatore visivo per l'altezza Z ad ogni livello (0-4)

@@ -26,5 +26,13 @@ public:
 	// tile padding percentage
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Config")
 	float CellPadding;
+
+	//
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Config")
+	int32 Seed;
+
+	// Scala del Perlin Noise (più basso = colline più dolci, più alto = variazioni brusche)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Config")
+	float N_Scale;
 	
 };
