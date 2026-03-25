@@ -39,7 +39,7 @@ void ATTT_GameMode::BeginPlay()
 	}
 	else
 	{
-		UE_LOG(LogTemp, Error, TEXT("GridData has not been assigned.") );
+		UE_LOG(LogTemp, Error, TEXT("GridData has not been assigned."));
 		return;
 	}
 
@@ -53,16 +53,13 @@ void ATTT_GameMode::BeginPlay()
 		return;
 	}
 
+	// La telecamera si posiziona matematicamente al centro della griglia (che ora è 25x25)
 	float CameraPosX = ((TileSize * FieldSize) + ((FieldSize - 1) * TileSize * CellPadding)) * 0.5f;
 
+	// NOTA: Con una griglia 25x25, un'altezza (Z) di 4000.0f potrebbe risultare un po' troppo vicina. 
+	// Se vedi la mappa tagliata, prova ad aumentare questo valore (es. 8000.0f o 10000.0f)
 	FVector CameraPos(CameraPosX, CameraPosX, 4000.0f);
 	HumanPlayer->SetActorLocationAndRotation(CameraPos, FRotationMatrix::MakeFromX(FVector(0, 0, -1)).Rotator());
-
-	// Alternativamente, per avere una telecamera fissa in scena:
-	// 1. Aggiungere un Camera Actor nella scena
-	// 2. Impostare "Player 0" nel campo "Auto Activate for Player"
-	// 3. Togliere la spunta al campo "Constrain Aspect Ratio"
-	// 4. Posizionatela e orientatela a vostro piacimento
 
 
 	// Human player = 0
@@ -89,7 +86,6 @@ void ATTT_GameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 
 	// ANNULLA IL TIMER!
-	// Questo impedisce che la funzione nel timer venga eseguita dopo che il mondo è stato distrutto.
 	GetWorld()->GetTimerManager().ClearTimer(ResetTimerHandle);
 }
 
@@ -113,36 +109,18 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 		return;
 	}
 
+	// TEMPORANEO: Manteniamo lo spawn dei segni X/O per capire se il click funziona.
+	// In futuro, questa funzione verrà rinominata/modificata per gestire il movimento 
+	// o lo spawn delle Unità (Sniper e Brawler) invece che dei semplici "segni".
 	UClass* SignActor = Players[CurrentPlayer]->Sign == ESign::X ? SignXActor : SignOActor;
 	FVector Location = GField->GetActorLocation() + SpawnPosition + FVector(0, 0, 10);
 	GetWorld()->SpawnActor(SignActor, &Location);
 
-	if (GField->IsWinPosition(GField->GetXYPositionByRelativeLocation(SpawnPosition)))
-	{
-		IsGameOver = true;
-		Players[CurrentPlayer]->OnWin();
-		for (int32 IndexI = 0; IndexI < Players.Num(); IndexI++)
-		{
-			if (IndexI != CurrentPlayer)
-			{
-				Players[IndexI]->OnLose();
-			}
-		}
-	}
-	else if (MoveCounter == (FieldSize * FieldSize))
-	{
-		// add a timer (3 seconds)
-	
-		GetWorld()->GetTimerManager().SetTimer(ResetTimerHandle, [&]()
-			{
-				// function to delay
-				GField->ResetField();
-			}, 3, false);
-	}
-	else
-	{
-		TurnNextPlayer();
-	}
+	// RIMOSSO IL VECCHIO CONTROLLO DEL TRIS (IsWinPosition)
+	// Adesso ci limitiamo a passare il turno. La logica di fine partita
+	// delle 3 Torri la implementeremo quando creeremo la Macchina a Stati.
+
+	TurnNextPlayer();
 }
 
 int32 ATTT_GameMode::GetNextPlayer(int32 Player)

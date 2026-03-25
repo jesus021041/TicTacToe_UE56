@@ -6,14 +6,11 @@
 // Sets default values
 ATile::ATile()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = false;
 
-	// template function that creates a components
 	Scene = CreateDefaultSubobject<USceneComponent>(TEXT("Scene"));
 	StaticMeshComponent = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("StaticMeshComponent"));
 
-	// every actor has a RootComponent that defines the transform in the World
 	SetRootComponent(Scene);
 	StaticMeshComponent->SetupAttachment(Scene);
 
@@ -21,6 +18,9 @@ ATile::ATile()
 	PlayerOwner = -1;
 	TileGridPosition = FVector2D(0, 0);
 
+	// Default initialization
+	ElevationLevel = 1;
+	bIsObstacle = false;
 }
 
 void ATile::SetTileStatus(const int32 TileOwner, const ETileStatus TileStatus)
@@ -49,17 +49,29 @@ FVector2D ATile::GetGridPosition()
 	return TileGridPosition;
 }
 
+void ATile::SetElevationLevel(int32 Level)
+{
+	ElevationLevel = Level;
+
+	// Il Livello 0 rappresenta l'acqua ed è un ostacolo non calpestabile
+	if (ElevationLevel == 0)
+	{
+		bIsObstacle = true;
+	}
+	else
+	{
+		bIsObstacle = false;
+	}
+
+	// Cambia il materiale solo se l'array è stato popolato nell'editor di Unreal
+	if (ElevationMaterials.IsValidIndex(ElevationLevel) && ElevationMaterials[ElevationLevel] != nullptr)
+	{
+		StaticMeshComponent->SetMaterial(0, ElevationMaterials[ElevationLevel]);
+	}
+}
+
 // Called when the game starts or when spawned
 void ATile::BeginPlay()
 {
 	Super::BeginPlay();
-	
 }
-
-// Called every frame
-//void ATile::Tick(float DeltaTime)
-//{
-//	Super::Tick(DeltaTime);
-//
-//}
-

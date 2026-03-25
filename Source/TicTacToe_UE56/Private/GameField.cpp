@@ -1,21 +1,27 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
-
 #include "GameField.h"
 #include "Kismet/GameplayStatics.h"
 #include "BaseSign.h"
 #include "TTT_GameMode.h"
+#include "Math/UnrealMathUtility.h" // Necessario per la funzione FMath::PerlinNoise2D
 
 // Sets default values
 AGameField::AGameField()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
+	// Set this actor to call Tick() every frame.
 	PrimaryActorTick.bCanEverTick = false;
+
+	// Parametri di default per il Perlin Noise
+	NoiseScale = 0.15f;
+	ZMultiplier = 50.0f; // Salto in altezza visivo per ogni Step Z
 }
 
 void AGameField::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
+
+	// Utilizza il GridData esistente per impostare la Size (25x25)
 	if (GridData)
 	{
 		Size = GridData->GridSize;
@@ -28,7 +34,7 @@ void AGameField::OnConstruction(const FTransform& Transform)
 		UE_LOG(LogTemp, Error, TEXT("GridData has not been assigned."));
 		return;
 	}
-	//normalized tilepadding
+	// Calcolo del moltiplicatore di posizione
 	NextCellPositionMultiplier = (TileSize + TileSize * CellPadding) / TileSize;
 }
 
@@ -36,7 +42,12 @@ void AGameField::OnConstruction(const FTransform& Transform)
 void AGameField::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// Generazione di un Seed Casuale differente ad ogni partita (Requisito)
+	RandomSeed = FMath::Rand();
+
 	GenerateField();
+	SpawnTowers();
 }
 
 void AGameField::ResetField()
@@ -45,10 +56,11 @@ void AGameField::ResetField()
 	{
 		for (ATile* Obj : TileArray)
 		{
+			// NOTA: In futuro il reset dovrà anche rimuovere le unità o rigenerare la mappa
 			Obj->SetTileStatus(NOT_ASSIGNED, ETileStatus::EMPTY);
 		}
 
-		// send broadcast event to registered objects 
+		// Notifica gli oggetti registrati del reset
 		OnResetEvent.Broadcast();
 
 		ATTT_GameMode* GameMode = Cast<ATTT_GameMode>(GetWorld()->GetAuthGameMode());
@@ -56,32 +68,108 @@ void AGameField::ResetField()
 		{
 			GameMode->IsGameOver = false;
 			GameMode->MoveCounter = 0;
-			GameMode->ChoosePlayerAndStartGame();
 		}
 	}
 }
 
 void AGameField::GenerateField()
 {
+	// Offset basato sul seed casuale per variare la mappa
+	FMath::RandInit(RandomSeed);
+	float OffsetX = FMath::RandRange(-10000.0f, 10000.0f);
+	float OffsetY = FMath::RandRange(-10000.0f, 10000.0f);
+
 	for (int32 IndexX = 0; IndexX < Size; IndexX++)
 	{
 		for (int32 IndexY = 0; IndexY < Size; IndexY++)
 		{
-			FVector Location = AGameField::GetRelativeLocationByXYPosition(IndexX, IndexY);
+			// Calcolo Perlin Noise per determinare l'altezza
+			float SampleX = (IndexX * NoiseScale) + OffsetX;
+			float SampleY = (IndexY * NoiseScale) + OffsetY;
+			float RawNoise = FMath::PerlinNoise2D(FVector2D(SampleX, SampleY));
+
+			// Normalizzazione valore noise tra 0.0 e 1.0
+			float NormalizedNoise = (RawNoise + 1.0f) / 2.0f;
+
+			// Quantizzazione in 5 livelli (0, 1, 2, 3, 4)
+			int32 ElevationLevel = FMath::Clamp(FMath::FloorToInt(NormalizedNoise * 5.0f), 0, 4);
+
+			// Calcolo posizione spaziale
+			FVector Location = GetRelativeLocationByXYPosition(IndexX, IndexY);
+			Location.Z = ElevationLevel * ZMultiplier;
+
+			// Spawn dell'attore Tile
 			ATile* Obj = GetWorld()->SpawnActor<ATile>(TileClass, Location, FRotator::ZeroRotator);
-			const float TileScale = TileSize / 100.f;
-			const float Zscaling = 0.2f;
-			Obj->SetActorScale3D(FVector(TileScale, TileScale, Zscaling));
-			Obj->SetGridPosition(IndexX, IndexY);
-			TileArray.Add(Obj);
-			TileMap.Add(FVector2D(IndexX, IndexY), Obj);
+
+			if (Obj)
+			{
+				const float TileScale = TileSize / 100.f;
+				// Scaling Z leggermente variabile per dare spessore ai blocchi alti
+				const float Zscaling = 0.2f + (ElevationLevel * 0.1f);
+				Obj->SetActorScale3D(FVector(TileScale, TileScale, Zscaling));
+
+				Obj->SetGridPosition(IndexX, IndexY);
+
+				// CORREZIONE ERRORE: Il nome corretto della funzione definita in Tile.h è SetElevationLevel
+				Obj->SetElevationLevel(ElevationLevel);
+
+				TileArray.Add(Obj);
+				TileMap.Add(FVector2D(IndexX, IndexY), Obj);
+			}
 		}
 	}
 }
 
+void AGameField::SpawnTowers()
+{
+	// Coordinate ideali per il piazzamento simmetrico (Requisito)
+	TArray<FVector2D> IdealTowerPositions = {
+		FVector2D(12, 12), // Torre Centrale
+		FVector2D(5, 12),  // Torre Laterale Sinistra
+		FVector2D(19, 12)  // Torre Laterale Destra
+	};
+
+	for (FVector2D TargetPos : IdealTowerPositions)
+	{
+		ATile* BestTile = GetNearestValidTileForTower(TargetPos);
+		if (BestTile)
+		{
+			// Segna la cella come occupata da una torre (non calpestabile)
+			// Nota: aggiungeremo la logica bIsTower in ATile se necessario
+			UE_LOG(LogTemp, Log, TEXT("Tower spawned at X:%f Y:%f"), BestTile->GetGridPosition().X, BestTile->GetGridPosition().Y);
+		}
+	}
+}
+
+ATile* AGameField::GetNearestValidTileForTower(FVector2D TargetPos)
+{
+	ATile* BestTile = nullptr;
+	float MinDist = MAX_FLT;
+
+	for (ATile* Tile : TileArray)
+	{
+		// Criteri: il tile più vicino che non sia acqua (Elevation > 0)
+		// Accediamo alla proprietà ElevationLevel tramite Tile
+		if (Tile->ElevationLevel > 0)
+		{
+			float Dist = FVector2D::Distance(TargetPos, Tile->GetGridPosition());
+			if (Dist < MinDist)
+			{
+				MinDist = Dist;
+				BestTile = Tile;
+			}
+		}
+	}
+	return BestTile;
+}
+
 FVector2D AGameField::GetPosition(const FHitResult& Hit)
 {
-	return Cast<ATile>(Hit.GetActor())->GetGridPosition();
+	if (ATile* Tile = Cast<ATile>(Hit.GetActor()))
+	{
+		return Tile->GetGridPosition();
+	}
+	return FVector2D(-1, -1);
 }
 
 TArray<ATile*>& AGameField::GetTileArray()
@@ -98,120 +186,5 @@ FVector2D AGameField::GetXYPositionByRelativeLocation(const FVector& Location) c
 {
 	const double XPos = Location.X / (TileSize * NextCellPositionMultiplier);
 	const double YPos = Location.Y / (TileSize * NextCellPositionMultiplier);
-	// GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, FString::Printf(TEXT("x=%f,y=%f"), XPos, YPos));
-	return FVector2D(XPos, YPos);
+	return FVector2D(FMath::RoundToDouble(XPos), FMath::RoundToDouble(YPos));
 }
-
-bool AGameField::IsWinPosition(const FVector2D Position) const
-{
-	const int32 Offset = WinSize - 1;
-	// vertical lines
-	for (int32 IndexI = Position.X - Offset; IndexI <= Position.X; IndexI++)
-	{
-		if (IsWinLine(FVector2D(IndexI, Position.Y), FVector2D(IndexI + Offset, Position.Y)))
-		{
-			return true;
-		}
-	}
-
-	// horizontal lines
-	for (int32 IndexI = Position.Y - Offset; IndexI <= Position[1]; IndexI++)
-	{
-		if (IsWinLine(FVector2D(Position.X, IndexI), FVector2D(Position.X, IndexI + Offset)))
-		{
-			return true;
-		}
-	}
-
-	// diagonal lines
-	for (int32 IndexI = -Offset; IndexI <= 0; IndexI++)
-	{
-		if (IsWinLine(FVector2D(Position.X + IndexI, Position.Y + IndexI), FVector2D(Position.X + Offset + IndexI, Position.Y + Offset + IndexI)))
-		{
-			return true;
-		}
-		if (IsWinLine(FVector2D(Position.X + IndexI, Position.Y - IndexI), FVector2D(Position.X + Offset + IndexI, Position.Y - Offset - IndexI)))
-		{
-			return true;
-		}
-	}
-
-	return false;
-}
-
-inline bool AGameField::IsWinLine(const FVector2D Begin, const FVector2D End) const
-{
-	return IsValidPosition(Begin) && IsValidPosition(End) && AllEqual(GetLine(Begin, End));
-}
-
-inline bool AGameField::IsValidPosition(const FVector2D Position) const
-{
-	return 0 <= Position.X && Position.X < Size && 0 <= Position.Y && Position.Y < Size;
-}
-
-TArray<int32> AGameField::GetLine(const FVector2D Begin, const FVector2D End) const
-{
-	int32 XSign;
-	if (Begin.X == End.X)
-	{
-		XSign = 0;
-	}
-	else
-	{
-		XSign = Begin.X < End.X ? 1 : -1;
-	}
-
-	int32 YSign;
-	if (Begin.Y == End.Y)
-	{
-		YSign = 0;
-	}
-	else
-	{
-		YSign = Begin.Y < End.Y ? 1 : -1;
-	}
-
-	TArray<int32> Line;
-	int32 XVal = Begin.X - XSign;
-	int32 YVal = Begin.Y - YSign;
-	do
-	{
-		XVal += XSign;
-		YVal += YSign;
-		Line.Add((TileMap[FVector2D(XVal, YVal)])->GetOwner());
-	} while (XVal != End.X || YVal != End.Y);
-
-	return Line;
-}
-
-bool AGameField::AllEqual(const TArray<int32>& Array) const
-{
-	if (Array.Num() == 0)
-	{
-		return false;
-	}
-	const int32 Value = Array[0];
-
-	if (Value == NOT_ASSIGNED)
-	{
-		return false;
-	}
-
-	for (int32 IndexI = 1; IndexI < Array.Num(); IndexI++)
-	{
-		if (Value != Array[IndexI])
-		{
-			return false;
-		}
-	}
-
-	return true;
-}
-
-// Called every frame
-//void AGameField::Tick(float DeltaTime)
-//{
-//	Super::Tick(DeltaTime);
-//
-//}
-

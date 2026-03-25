@@ -15,8 +15,8 @@ UCLASS()
 class TICTACTOE_UE56_API AGameField : public AActor
 {
 	GENERATED_BODY()
-	
-public:	
+
+public:
 	// keeps track of tiles
 	UPROPERTY(Transient)
 	TArray<ATile*> TileArray;
@@ -39,7 +39,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	int32 Size;
 
-	// size of winning line
+	// size of winning line (Mantenuto temporaneamente per non rompere compatibilità incrociate)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	int32 WinSize;
 
@@ -58,6 +58,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Config")
 	UTTT_ConfigData* GridData;
 
+	// --- PARAMETRI PER LA GENERAZIONE PROCEDURALE (PERLIN NOISE) ---
+
+	// Seed casuale per avere mappe diverse ad ogni esecuzione
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MapConfig")
+	int32 RandomSeed;
+
+	// Scala del Perlin Noise (più basso = colline più dolci, più alto = variazioni brusche)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MapConfig")
+	float NoiseScale;
+
+	// Moltiplicatore visivo per l'altezza Z ad ogni livello (0-4)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MapConfig")
+	float ZMultiplier;
+
+	// ---------------------------------------------------------------
+
 	// Sets default values for this actor's properties
 	AGameField();
 
@@ -74,6 +90,16 @@ public:
 	// generate an empty game field
 	void GenerateField();
 
+	// --- FUNZIONI PER LE TORRI ---
+
+	// Gestisce il posizionamento delle 3 torri sulla mappa
+	void SpawnTowers();
+
+	// Trova la cella valida più vicina al punto ideale dove spawnare una torre
+	ATile* GetNearestValidTileForTower(FVector2D TargetPos);
+
+	// -----------------------------
+
 	// return a (x,y) position given a hit (click) on a field tile
 	FVector2D GetPosition(const FHitResult& Hit);
 
@@ -86,24 +112,8 @@ public:
 	// return (x,y) position given a relative position
 	FVector2D GetXYPositionByRelativeLocation(const FVector& Location) const;
 
-	// check if a position is a win position
-	bool IsWinPosition(const FVector2D Position) const;
-
-	// check if is a win line
-	inline bool IsWinLine(const FVector2D Begin, const FVector2D End) const;
-
-	// checking if is a valid field position
-	inline bool IsValidPosition(const FVector2D Position) const;
-
-	// get a line given a begin and end positions
-	TArray<int32> GetLine(const FVector2D Begin, const FVector2D End) const;
-
-	// check if a line contains all equal elements
-	bool AllEqual(const TArray<int32>& Array) const;
-
-
-//public:	
-//	// Called every frame
-//	virtual void Tick(float DeltaTime) override;
+	//public:	
+	//	// Called every frame
+	//	virtual void Tick(float DeltaTime) override;
 
 };
