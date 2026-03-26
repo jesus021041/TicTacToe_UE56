@@ -47,6 +47,10 @@ public:
 	UPROPERTY(EditDefaultsOnly)
 	TSubclassOf<ATile> TileClass;
 
+	// Subclass per la Torre da assegnare nel Blueprint
+	UPROPERTY(EditDefaultsOnly, Category = "Config")
+	TSubclassOf<AActor> TowerClass;
+
 	// tile padding percentage
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	float CellPadding;

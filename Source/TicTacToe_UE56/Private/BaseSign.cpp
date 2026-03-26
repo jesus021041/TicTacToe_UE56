@@ -4,32 +4,42 @@
 #include "BaseSign.h"
 #include "GameField.h"
 #include "TTT_GameMode.h"
+#include "Kismet/GameplayStatics.h" // Aggiunto per poter cercare gli attori nel mondo
 
 // Sets default values
 ABaseSign::ABaseSign()
 {
- 	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
-	PrimaryActorTick.bCanEverTick = true;
-
+	// Disattiviamo il Tick perché per i Segni/Torri non serve e consuma solo performance
+	PrimaryActorTick.bCanEverTick = false;
 }
 
 // Called when the game starts or when spawned
 void ABaseSign::BeginPlay()
 {
 	Super::BeginPlay();
-	ATTT_GameMode* GameMode = Cast<ATTT_GameMode>(GetWorld()->GetAuthGameMode());
-	GameMode->GField->OnResetEvent.AddDynamic(this, &ABaseSign::SelfDestroy);
+
+	// FIX CRASH: Cerchiamo il GameField direttamente nel mondo in modo sicuro
+	// invece di leggere la variabile GField del GameMode che potrebbe non essere ancora inizializzata.
+	AGameField* Field = Cast<AGameField>(UGameplayStatics::GetActorOfClass(GetWorld(), AGameField::StaticClass()));
+
+	if (Field)
+	{
+		// Se lo abbiamo trovato, ci iscriviamo all'evento
+		Field->OnResetEvent.AddDynamic(this, &ABaseSign::SelfDestroy);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("BaseSign non è riuscito a trovare il GameField nel livello!"));
+	}
 }
 
 // Called every frame
 void ABaseSign::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-
 }
 
 void ABaseSign::SelfDestroy()
 {
 	Destroy();
 }
-

@@ -5,6 +5,8 @@
 #include "BaseSign.h"
 #include "TTT_GameMode.h"
 #include "Math/UnrealMathUtility.h" // Necessario per la funzione FMath::PerlinNoise2D
+#include "Misc/DateTime.h"          // Necessario per il vero random basato sul tempo
+#include "Math/RandomStream.h"      // FIX: Gestione corretta e indipendente del Seed
 
 // Sets default values
 AGameField::AGameField()
@@ -43,12 +45,19 @@ void AGameField::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Generazione di un Seed Casuale differente ad ogni esecuzione
-	RandomSeed = FMath::Rand();
+	// FIX SEED BUG: In Unreal PIE, il random globale può dare la stessa sequenza.
+	// Usiamo i Ticks del tempo reale di sistema per un vero Random!
+	RandomSeed = FDateTime::Now().GetTicks() % 9999999;
 
+	UE_LOG(LogTemp, Warning, TEXT("======================================="));
+	UE_LOG(LogTemp, Warning, TEXT("=== INIZIO GENERAZIONE MAPPA 25x25 ==="));
+	UE_LOG(LogTemp, Warning, TEXT("Seed Casuale Generato dal Tempo: %d"), RandomSeed);
+	UE_LOG(LogTemp, Warning, TEXT("======================================="));
+
+	// 1. Genera la Mappa Procedurale
 	GenerateField();
 
-	// Piazzamento delle 3 Torri (Obiettivi)
+	// 2. Piazzamento delle 3 Torri (Obiettivi) prima delle unità
 	SpawnTowers();
 }
 
@@ -74,122 +83,178 @@ void AGameField::ResetField()
 
 void AGameField::GenerateField()
 {
-	FMath::RandInit(RandomSeed);
+	// FRandomStream garantisce che tutti i random (float e int) siano forzatamente derivati dal nostro Seed
+	FRandomStream RandomStream(RandomSeed);
 
 	int32 TotalCells = Size * Size; // 625 per una mappa 25x25
 
-	// QUOTE ESATTE (Garantiscono colori bilanciati ad ogni partita)
-	int32 CountBlue = FMath::RoundToInt(TotalCells * 0.12f);   // ~12% Livello 0 (Acqua)
-	int32 CountRed = FMath::RoundToInt(TotalCells * 0.18f);    // ~18% Livello 4 (Rosso)
+	// QUOTE ESATTE (Garantiscono colori bilanciati ad ogni partita come richiesto)
+	int32 CountBlue = FMath::RoundToInt(TotalCells * 0.18f);   // ~18% Livello 0 (Acqua)
+	int32 CountRed = FMath::RoundToInt(TotalCells * 0.12f);    // ~12% Livello 4 (Rosso)
 	int32 CountGreen = FMath::RoundToInt(TotalCells * 0.25f);  // ~25% Livello 1 (Verde)
 	int32 CountYellow = FMath::RoundToInt(TotalCells * 0.25f); // ~25% Livello 2 (Giallo)
 	// Il restante ~20% sarà Livello 3 (Arancio)
 
-	// FUNZIONE DI VERIFICA CONNESSIONE (Evita isole irraggiungibili)
-	auto CheckConnectivity = [&](const TArray<int32>& Elevations) -> bool {
-		TArray<bool> Visited;
-		Visited.Init(false, TotalCells);
-		int32 StartIndex = -1;
+	UE_LOG(LogTemp, Log, TEXT("Target Celle calcolato: Acqua:%d, Pianura:%d, Montagna Bassa:%d, Vetta:%d"), CountBlue, CountGreen, CountYellow, CountRed);
 
-		// Trova la prima cella di terra (non acqua)
-		for (int32 i = 0; i < TotalCells; i++) {
-			if (Elevations[i] > 0) {
-				StartIndex = i;
-				break;
-			}
-		}
-		if (StartIndex == -1) return false;
-
-		TArray<int32> Queue;
-		Queue.Add(StartIndex);
-		Visited[StartIndex] = true;
-		int32 VisitedCount = 0;
-
-		// Flood-Fill per scorrere tutta la terra accessibile
-		while (Queue.Num() > 0) {
-			int32 Curr = Queue[0];
-			Queue.RemoveAt(0);
-			VisitedCount++;
-
-			int32 CX = Curr % Size;
-			int32 CY = Curr / Size;
-
-			// Su, Giù, Destra, Sinistra
-			int32 OffsetsX[] = { 0, 0, 1, -1 };
-			int32 OffsetsY[] = { 1, -1, 0, 0 };
-
-			for (int32 n = 0; n < 4; n++) {
-				int32 NX = CX + OffsetsX[n];
-				int32 NY = CY + OffsetsY[n];
-				if (NX >= 0 && NX < Size && NY >= 0 && NY < Size) {
-					int32 NIndex = NY * Size + NX;
-					// Se non è visitato e NON è acqua (>0)
-					if (!Visited[NIndex] && Elevations[NIndex] > 0) {
-						Visited[NIndex] = true;
-						Queue.Add(NIndex);
-					}
-				}
-			}
-		}
-		// La mappa è valida se le celle di terra visitate corrispondono al totale della terra
-		return VisitedCount == (TotalCells - CountBlue);
-		};
-
-	bool bMapValid = false;
 	TArray<int32> FinalElevations;
 	FinalElevations.Init(0, TotalCells);
 
-	int32 MaxAttempts = 1000;
-	int32 Attempts = 0;
+	// Utilizziamo il RandomStream per ottenere offset in virgola mobile sempre nuovi ad ogni avvio!
+	float OffsetX = RandomStream.FRandRange(-50000.0f, 50000.0f);
+	float OffsetY = RandomStream.FRandRange(-50000.0f, 50000.0f);
 
-	// LOOP DI GENERAZIONE: Riprova finché non trova una mappa senza isole
-	while (!bMapValid && Attempts < MaxAttempts)
-	{
-		Attempts++;
-		float OffsetX = FMath::RandRange(-50000.0f, 50000.0f);
-		float OffsetY = FMath::RandRange(-50000.0f, 50000.0f);
+	struct FNoiseCell { int32 Index; float NoiseVal; };
+	TArray<FNoiseCell> NoiseCells;
+	TArray<float> RawNoises;
+	RawNoises.Init(0.0f, TotalCells);
 
-		struct FNoiseCell { int32 Index; float NoiseVal; };
-		TArray<FNoiseCell> NoiseCells;
+	// Calcolo del Perlin Noise per ogni cella
+	for (int32 IndexX = 0; IndexX < Size; IndexX++) {
+		for (int32 IndexY = 0; IndexY < Size; IndexY++) {
+			float SampleX = (IndexX * NoiseScale) + OffsetX;
+			float SampleY = (IndexY * NoiseScale) + OffsetY;
 
-		for (int32 IndexX = 0; IndexX < Size; IndexX++) {
-			for (int32 IndexY = 0; IndexY < Size; IndexY++) {
-				float SampleX = (IndexX * NoiseScale) + OffsetX;
-				float SampleY = (IndexY * NoiseScale) + OffsetY;
+			float Noise = FMath::PerlinNoise2D(FVector2D(SampleX, SampleY));
+			int32 FlatIndex = IndexY * Size + IndexX;
+			NoiseCells.Add({ FlatIndex, Noise });
+			RawNoises[FlatIndex] = Noise; // Salviamo il rumore grezzo per la riparazione
+		}
+	}
 
-				// Rileviamo la topografia base
-				float Noise = FMath::PerlinNoise2D(FVector2D(SampleX, SampleY));
-				NoiseCells.Add({ IndexY * Size + IndexX, Noise });
+	// Ordiniamo le celle per valore (da valle a picco)
+	NoiseCells.Sort([](const FNoiseCell& A, const FNoiseCell& B) {
+		return A.NoiseVal < B.NoiseVal;
+		});
+
+	// Mappatura Esatta dei Colori (Garantisce le percentuali desiderate)
+	for (int32 i = 0; i < TotalCells; i++) {
+		int32 Level = 0;
+		if (i < CountBlue) Level = 0;
+		else if (i < CountBlue + CountGreen) Level = 1;
+		else if (i < CountBlue + CountGreen + CountYellow) Level = 2;
+		else if (i < TotalCells - CountRed) Level = 3;
+		else Level = 4;
+
+		FinalElevations[NoiseCells[i].Index] = Level;
+	}
+
+	// =====================================================================
+	// ALGORITMO DI RIPARAZIONE ISOLE (Garantisce 1 singolo continente)
+	// =====================================================================
+	TArray<int32> ComponentLabels;
+	ComponentLabels.Init(-1, TotalCells);
+	TMap<int32, int32> ComponentSizes;
+	int32 CurrentLabel = 0;
+
+	// 1. Identifica tutti i continenti (masse di terra collegate) usando il Flood Fill
+	for (int32 i = 0; i < TotalCells; i++) {
+		if (FinalElevations[i] > 0 && ComponentLabels[i] == -1) {
+			int32 CompSize = 0;
+			TArray<int32> Queue;
+			Queue.Add(i);
+			ComponentLabels[i] = CurrentLabel;
+
+			while (Queue.Num() > 0) {
+				int32 Curr = Queue[0];
+				Queue.RemoveAt(0);
+				CompSize++;
+
+				int32 CX = Curr % Size;
+				int32 CY = Curr / Size;
+
+				int32 OffsetsX[] = { 0, 0, 1, -1 };
+				int32 OffsetsY[] = { 1, -1, 0, 0 };
+
+				for (int32 n = 0; n < 4; n++) {
+					int32 NX = CX + OffsetsX[n];
+					int32 NY = CY + OffsetsY[n];
+					if (NX >= 0 && NX < Size && NY >= 0 && NY < Size) {
+						int32 NIndex = NY * Size + NX;
+						if (FinalElevations[NIndex] > 0 && ComponentLabels[NIndex] == -1) {
+							ComponentLabels[NIndex] = CurrentLabel;
+							Queue.Add(NIndex);
+						}
+					}
+				}
+			}
+			ComponentSizes.Add(CurrentLabel, CompSize);
+			CurrentLabel++;
+		}
+	}
+
+	// 2. Trova il continente principale (quello con più celle)
+	int32 MainComponentLabel = -1;
+	int32 MaxSize = 0;
+	for (auto& Pair : ComponentSizes) {
+		if (Pair.Value > MaxSize) {
+			MaxSize = Pair.Value;
+			MainComponentLabel = Pair.Key;
+		}
+	}
+
+	// 3. Affonda le isole minori (le fa diventare acqua)
+	int32 IsolatedLandCount = 0;
+	for (int32 i = 0; i < TotalCells; i++) {
+		if (FinalElevations[i] > 0 && ComponentLabels[i] != MainComponentLabel) {
+			FinalElevations[i] = 0;
+			IsolatedLandCount++;
+		}
+	}
+
+	// 4. Per mantenere le percentuali perfette, trasforma l'acqua costiera in pianura
+	if (IsolatedLandCount > 0) {
+		UE_LOG(LogTemp, Warning, TEXT("Trovate %d celle isolate. Avvio riparazione mappa (creazione ponti naturali)..."), IsolatedLandCount);
+
+		for (int32 k = 0; k < IsolatedLandCount; k++) {
+			int32 BestWaterIndex = -1;
+			float BestNoise = -MAX_FLT;
+
+			// Cerca la cella d'acqua migliore adiacente al continente
+			for (int32 i = 0; i < TotalCells; i++) {
+				if (FinalElevations[i] == 0) {
+					int32 CX = i % Size;
+					int32 CY = i / Size;
+					bool bAdjacentToLand = false;
+
+					int32 OffsetsX[] = { 0, 0, 1, -1 };
+					int32 OffsetsY[] = { 1, -1, 0, 0 };
+
+					for (int32 n = 0; n < 4; n++) {
+						int32 NX = CX + OffsetsX[n];
+						int32 NY = CY + OffsetsY[n];
+						if (NX >= 0 && NX < Size && NY >= 0 && NY < Size) {
+							int32 NIndex = NY * Size + NX;
+							// Deve toccare la terra
+							if (FinalElevations[NIndex] > 0) {
+								bAdjacentToLand = true;
+								break;
+							}
+						}
+					}
+
+					if (bAdjacentToLand) {
+						// Preferiamo l'acqua meno profonda (Noise più alto)
+						if (RawNoises[i] > BestNoise) {
+							BestNoise = RawNoises[i];
+							BestWaterIndex = i;
+						}
+					}
+				}
+			}
+
+			if (BestWaterIndex != -1) {
+				FinalElevations[BestWaterIndex] = 1; // Nuova terra (Pianura verde)
+				RawNoises[BestWaterIndex] = -MAX_FLT; // Evita di pescare la stessa cella se ci sono più isole da coprire
 			}
 		}
-
-		// Ordiniamo le celle per valore (da valle a picco)
-		NoiseCells.Sort([](const FNoiseCell& A, const FNoiseCell& B) {
-			return A.NoiseVal < B.NoiseVal;
-			});
-
-		// Mappatura Esatta dei Colori (Garantisce le percentuali desiderate)
-		for (int32 i = 0; i < TotalCells; i++) {
-			int32 Level = 0;
-			if (i < CountBlue) Level = 0;
-			else if (i < CountBlue + CountGreen) Level = 1;
-			else if (i < CountBlue + CountGreen + CountYellow) Level = 2;
-			else if (i < TotalCells - CountRed) Level = 3;
-			else Level = 4;
-
-			FinalElevations[NoiseCells[i].Index] = Level;
-		}
-
-		// Controlla se ci sono zone isolate
-		bMapValid = CheckConnectivity(FinalElevations);
-	}
-
-	if (!bMapValid) {
-		UE_LOG(LogTemp, Warning, TEXT("Impossibile trovare mappa senza isole. Forzata ultima generata."));
+		UE_LOG(LogTemp, Warning, TEXT("Riparazione completata con successo! Mappa validata."));
 	}
 	else {
-		UE_LOG(LogTemp, Log, TEXT("Mappa perfetta generata in %d tentativi"), Attempts);
+		UE_LOG(LogTemp, Warning, TEXT("Mappa perfetta! Nessuna isola isolata generata."));
 	}
+	// =====================================================================
+
 
 	// ----------------------------------------------------------------------
 	// SPAWN FISICO DEI TILE
@@ -219,25 +284,64 @@ void AGameField::GenerateField()
 			}
 		}
 	}
+
+	UE_LOG(LogTemp, Warning, TEXT("======================================="));
+	UE_LOG(LogTemp, Warning, TEXT("=== RESOCONTO FINALE MAPPA GENERATA ==="));
+	UE_LOG(LogTemp, Warning, TEXT("Celle Acqua (Livello 0 - Blu)     : %d"), CountBlue);
+	UE_LOG(LogTemp, Warning, TEXT("Celle Pianura (Livello 1 - Verde) : %d"), CountGreen);
+	UE_LOG(LogTemp, Warning, TEXT("Celle Colline (Livello 2 - Giallo): %d"), CountYellow);
+	UE_LOG(LogTemp, Warning, TEXT("Celle Montagne (Livello 3 - Aran.): %d"), (TotalCells - CountBlue - CountGreen - CountYellow - CountRed));
+	UE_LOG(LogTemp, Warning, TEXT("Celle Vette (Livello 4 - Rosso)   : %d"), CountRed);
+	UE_LOG(LogTemp, Warning, TEXT("======================================="));
 }
 
 void AGameField::SpawnTowers()
 {
-	// Coordinate ideali da PDF
+	// Coordinate ideali modificate per mantenere la perfetta simmetria.
+	// Se il centro è (12,12), e la sinistra è (5, 12), la destra per essere equidistante
+	// deve essere 12 + (12 - 5) = 19 sull'asse X. 
 	TArray<FVector2D> IdealTowerPositions = {
-		FVector2D(12, 12), // Centro
-		FVector2D(5, 12),  // Sinistra
-		FVector2D(12, 19)  // Destra
+		FVector2D(12, 12), // Torre Centrale
+		FVector2D(5, 12),  // Torre Laterale Sinistra
+		FVector2D(19, 12)  // Torre Laterale Destra
 	};
 
-	for (FVector2D TargetPos : IdealTowerPositions)
+	for (int32 i = 0; i < IdealTowerPositions.Num(); i++)
 	{
+		FVector2D TargetPos = IdealTowerPositions[i];
+
+		// Implementazione Algoritmo di Piazzamento Simmetrico Adattivo
 		ATile* BestTile = GetNearestValidTileForTower(TargetPos);
 
 		if (BestTile)
 		{
-			// Log per debug nel terminale di Unreal
-			UE_LOG(LogTemp, Log, TEXT("Tower Objective placed at X:%f Y:%f"), BestTile->GetGridPosition().X, BestTile->GetGridPosition().Y);
+			// 1. Rende la cella NON CALPESTABILE marcandola come occupata (Ostacolo)
+			BestTile->SetTileStatus(NOT_ASSIGNED, ETileStatus::OCCUPIED);
+
+			// 2. Spawn effettivo del Blueprint della Torre
+			if (TowerClass != nullptr)
+			{
+				FVector SpawnLocation = BestTile->GetActorLocation();
+				// Aggiungiamo un po' di quota Z per appoggiarla sopra il blocco. 
+				// Regola questo valore (es. 50.0f) in base all'origine della tua mesh.
+				SpawnLocation.Z += 50.0f;
+
+				GetWorld()->SpawnActor<AActor>(TowerClass, SpawnLocation, FRotator::ZeroRotator);
+
+				UE_LOG(LogTemp, Warning, TEXT("Torre %d spawnata via Blueprint in X:%f Y:%f"), i + 1, BestTile->GetGridPosition().X, BestTile->GetGridPosition().Y);
+			}
+			else
+			{
+				// FALLBACK: Trucco Visivo se non è stato assegnato alcun Blueprint nell'editor
+				FVector CurrentScale = BestTile->GetActorScale3D();
+				BestTile->SetActorScale3D(FVector(CurrentScale.X, CurrentScale.Y, CurrentScale.Z + 3.0f));
+
+				UE_LOG(LogTemp, Warning, TEXT("ATTENZIONE: Nessun BP_Tower assegnato! Torre %d simulata con trucco visivo in X:%f Y:%f"), i + 1, BestTile->GetGridPosition().X, BestTile->GetGridPosition().Y);
+			}
+		}
+		else
+		{
+			UE_LOG(LogTemp, Error, TEXT("Impossibile piazzare la Torre %d!"), i + 1);
 		}
 	}
 }
@@ -249,10 +353,14 @@ ATile* AGameField::GetNearestValidTileForTower(FVector2D TargetPos)
 
 	for (ATile* Tile : TileArray)
 	{
-		// Le torri non possono stare nell'acqua (Livello 0)
-		if (Tile->ElevationLevel > 0)
+		// REQUISITI ADATTIVI:
+		// - Deve essere Terra, non Acqua (ElevationLevel > 0)
+		// - Deve essere vuota, per evitare che due torri spawnino nello stesso Tile
+		if (Tile->ElevationLevel > 0 && Tile->GetTileStatus() == ETileStatus::EMPTY)
 		{
 			float Dist = FVector2D::Distance(TargetPos, Tile->GetGridPosition());
+
+			// Troviamo il punto più vicino all'ideale
 			if (Dist < MinDist)
 			{
 				MinDist = Dist;
