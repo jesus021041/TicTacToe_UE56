@@ -3,79 +3,87 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "TTT_PlayerInterface.h"
-#include "GameField.h"
 #include "GameFramework/GameModeBase.h"
+#include "GameField.h"
+#include "BaseUnit.h"
 #include "TTT_ConfigData.h"
+#include "TTT_PlayerInterface.h"
 #include "TTT_GameMode.generated.h"
 
-class AActor;
+// --- REQUISITO: Macchina a Stati per le Fasi della Partita ---
+UENUM(BlueprintType)
+enum class EGameState : uint8
+{
+	CoinFlip,
+	Placement,
+	Playing,
+	GameOver
+};
 
-struct FPosition;
-
-/**
- * 
- */
 UCLASS()
 class TICTACTOE_UE56_API ATTT_GameMode : public AGameModeBase
 {
 	GENERATED_BODY()
 
 public:
-	// tracks if the game is over
+	ATTT_GameMode();
+
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	// Stato attuale della partita
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+	EGameState CurrentGameState;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
 	bool IsGameOver;
-	// array of player interfaces
-	TArray<ITTT_PlayerInterface*> Players;
-	int32 CurrentPlayer;
-	// tracks the number of moves in order to signal a drawn game
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
 	int32 MoveCounter;
 
-	// TSubclassOf is a template class that provides UClass type safety.
-	UPROPERTY(EditDefaultsOnly)
-	TSubclassOf<AGameField> GameFieldClass;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+	int32 CurrentPlayer;
 
-	// field size
-	int32 FieldSize;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+	int32 StartingPlayer;
 
-	// tile padding percentage
-	float CellPadding;
+	// --- Contatori per il Piazzamento ---
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+	int32 Player0UnitsPlaced;
 
-	// tile size
-	float TileSize;
-
-	// reference to a GameField object
-	UPROPERTY(VisibleAnywhere)
-	AGameField* GField;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TSubclassOf<AActor> SignXActor;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	TSubclassOf<AActor> SignOActor;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+	int32 Player1UnitsPlaced;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Config")
 	UTTT_ConfigData* GridData;
 
-	ATTT_GameMode();
+	UPROPERTY(EditDefaultsOnly, Category = "Config")
+	TSubclassOf<AGameField> GameFieldClass;
 
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Config")
+	AGameField* GField;
 
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+	// --- Classi delle Unità da assegnare nel Blueprint ---
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Unit Config")
+	TSubclassOf<ABaseUnit> SniperClass;
 
-	// called at the start of the game
-	void ChoosePlayerAndStartGame();
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Unit Config")
+	TSubclassOf<ABaseUnit> BrawlerClass;
 
-	// set the cell sign and the position 
-	void SetCellSign(const int32 PlayerNumber, const FVector& SpawnPosition);
+	// Array dei giocatori (0 = Umano, 1 = AI)
+	TArray<ITTT_PlayerInterface*> Players;
 
-	// get the next player index
+	FTimerHandle ResetTimerHandle;
+
+	int32 FieldSize;
+	float TileSize;
+	float CellPadding;
+
+	// Funzioni principali
+	void PerformCoinFlip();
+	void TurnNextPlayer();
 	int32 GetNextPlayer(int32 Player);
 
-	// called at the end of the game turn
-	void TurnNextPlayer();
-
-private:
-	FTimerHandle ResetTimerHandle;
-	
+	// Funzione per piazzare (e in futuro muovere) le unità
+	void SetCellSign(const int32 PlayerNumber, const FVector& SpawnPosition);
 };

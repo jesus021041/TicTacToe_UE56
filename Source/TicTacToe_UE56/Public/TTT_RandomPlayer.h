@@ -6,8 +6,6 @@
 #include "GameFramework/Pawn.h"
 #include "TTT_PlayerInterface.h"
 #include "TTT_GameInstance.h"
-#include "TTT_GameMode.h"
-#include "Kismet/GameplayStatics.h"
 #include "TTT_RandomPlayer.generated.h"
 
 UCLASS()
@@ -19,6 +17,8 @@ public:
 	// Sets default values for this pawn's properties
 	ATTT_RandomPlayer();
 
+	// Aggiunto UPROPERTY per evitare che il Garbage Collector elimini il riferimento causando crash
+	UPROPERTY()
 	UTTT_GameInstance* GameInstance;
 
 protected:
@@ -27,19 +27,20 @@ protected:
 
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
-public:	
+public:
 	// Called every frame
 	virtual void Tick(float DeltaTime) override;
 
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
+	// --- Metodi ereditati dall'interfaccia ITTT_PlayerInterface ---
 	virtual void OnTurn() override;
 	virtual void OnWin() override;
 	virtual void OnLose() override;
 
 private:
-
+	// Timer usato per simulare il tempo di reazione dell'IA
 	FTimerHandle AI_TurnTimerHandle;
 
 };
