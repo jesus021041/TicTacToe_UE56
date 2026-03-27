@@ -4,15 +4,10 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
-#include "TTT_HumanPlayer.h"
-#include "InputActionValue.h"
-#include "EnhancedInputComponent.h"
-#include "EnhancedInputSubsystems.h"
+#include "BaseUnit.h"
+#include "UnitActionWidget.h" // Includiamo il nostro nuovo Widget
 #include "TTT_PlayerController.generated.h"
 
-/**
- * 
- */
 UCLASS()
 class TICTACTOE_UE56_API ATTT_PlayerController : public APlayerController
 {
@@ -21,17 +16,22 @@ class TICTACTOE_UE56_API ATTT_PlayerController : public APlayerController
 public:
 	ATTT_PlayerController();
 
-	UPROPERTY(EditAnywhere, Category = Input)
-	UInputMappingContext* TTTContext;
+	// Puntatore all'unità attualmente selezionata
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Selection")
+	ABaseUnit* SelectedUnit;
 
+	// La classe del Blueprint che sceglieremo nell'editor
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "UI")
+	TSubclassOf<UUnitActionWidget> ActionWidgetClass;
 
-	UPROPERTY(EditAnywhere, Category = Input)
-	UInputAction* ClickAction;
-
-	void ClickOnGrid();
+	// L'istanza vera e propria creata a schermo
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
+	UUnitActionWidget* ActionWidgetInstance;
 
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
-	
+
+	// Funzione chiamata al click sinistro del mouse
+	void OnLeftMouseClick();
 };
