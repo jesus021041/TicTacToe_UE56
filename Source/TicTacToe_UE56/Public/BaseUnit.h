@@ -6,80 +6,72 @@
 #include "GameFramework/Actor.h"
 #include "BaseUnit.generated.h"
 
-// Enum per definire il tipo di attacco come richiesto dal PDF
+// Enumeratore per il tipo di attacco
 UENUM(BlueprintType)
 enum class EAttackType : uint8
 {
-	Melee       UMETA(DisplayName = "Attacco a corto raggio"),
-	Ranged      UMETA(DisplayName = "Attacco a distanza")
+	Melee       UMETA(DisplayName = "Mischia"),
+	Ranged      UMETA(DisplayName = "Distanza")
 };
 
-UCLASS(Abstract) // "Abstract" impedisce di spawnare una BaseUnit generica. Si spawneranno solo Sniper e Brawler.
+UCLASS(Abstract)
 class TICTACTOE_UE56_API ABaseUnit : public AActor
 {
 	GENERATED_BODY()
-
-public:
-	// Sets default values for this actor's properties
+	
+public:	
 	ABaseUnit();
 
-	// Variabile che identifica di quante caselle (MAX) può muoversi l'unità
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
-	int32 MovementRange;
-
-	// Tipo di Attacco
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
-	EAttackType AttackType;
-
-	// Quante caselle sono necessarie per effettuare l'attacco
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
-	int32 AttackRange;
-
-	// Danno Minimo
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
-	int32 MinDamage;
-
-	// Danno Massimo
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
-	int32 MaxDamage;
-
-	// Punti Vita
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
-	int32 HealthPoints;
-
-	// Punti Vita Massimi (utile per la UI)
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Unit Stats")
-	int32 MaxHealthPoints;
-
-	// Identificativo del giocatore a cui appartiene (0 = Umano, 1 = AI)
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Unit State")
-	int32 PlayerOwner;
-
-	// Indica se l'unità ha già agito in questo turno
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Unit State")
-	bool bHasActedThisTurn;
-
-
-protected:
-	// Called when the game starts or when spawned
-	virtual void BeginPlay() override;
-
-	// Componente visivo dell'unità (la mesh 3D)
+	// Componente visivo (Mesh)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UStaticMeshComponent* UnitMesh;
 
-public:
-	// Called every frame
-	virtual void Tick(float DeltaTime) override;
+	// === STATISTICHE UNITÀ (Modificabili dai Blueprint figli) ===
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
+	int32 MaxHealthPoints;
 
-	// Funzione per calcolare il danno inflitto (estrae un numero random tra Min e Max)
-	UFUNCTION(BlueprintCallable, Category = "Unit Actions")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Unit Stats")
+	int32 HealthPoints;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
+	int32 MinDamage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
+	int32 MaxDamage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
+	int32 MovementRange;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
+	int32 AttackRange;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
+	EAttackType AttackType;
+
+	//GESTIONE GIOCO
+	// 0 per Umano && 1 per IA
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game")
+	int32 PlayerOwner;
+
+	// La coordinata X,Y sulla scacchiera in cui si trova la pedina
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game")
+	FVector2D CurrentGridPosition;
+
+	// Indica se l'unità ha già fatto la sua mossa questo turno
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game")
+	bool bHasActedThisTurn = false;
+
+	// === METODI DI COMBATTIMENTO ===
+	UFUNCTION(BlueprintCallable, Category = "Combat")
 	int32 CalculateDamage() const;
 
-	// Funzione per ricevere danno
-	UFUNCTION(BlueprintCallable, Category = "Unit Actions")
-	virtual void TakeDamageAmount(int32 DamageAmount);
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+	void TakeDamageAmount(int32 DamageAmount);
 
-	// Funzione chiamata quando gli HP scendono a zero
-	virtual void Die();
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+	void Die();
+
+protected:
+	virtual void BeginPlay() override;
+	virtual void Tick(float DeltaTime) override;
 };

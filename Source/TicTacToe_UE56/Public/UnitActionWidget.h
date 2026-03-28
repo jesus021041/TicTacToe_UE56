@@ -17,9 +17,26 @@ class TICTACTOE_UE56_API UUnitActionWidget : public UUserWidget
 public:
 	// Funzione per aggiornare i testi quando clicchi su un'unità
 	UFUNCTION(BlueprintCallable, Category = "UI")
-	void UpdateUI(ABaseUnit* SelectedUnit);
+	void UpdateUI(ABaseUnit* InSelectedUnit);
 
 protected:
+	// Costruttore nativo della UI (viene chiamato quando il widget viene creato)
+	virtual void NativeConstruct() override;
+
+	// --- FUNZIONI LEGATE AI BOTTONI ---
+	UFUNCTION()
+	void OnMoveButtonClicked();
+
+	UFUNCTION()
+	void OnAttackButtonClicked();
+
+	UFUNCTION()
+	void OnEndTurnButtonClicked();
+
+	// Riferimento interno all'unità attualmente mostrata
+	UPROPERTY()
+	ABaseUnit* CurrentUnit;
+
 	//COMPONENTI UI
 
 	UPROPERTY(meta = (BindWidget))
@@ -34,7 +51,6 @@ protected:
 	UPROPERTY(meta = (BindWidget))
 	UTextBlock* MovementText;
 
-	//Bottoni x azioni
 	UPROPERTY(meta = (BindWidget))
 	UButton* MoveButton;
 

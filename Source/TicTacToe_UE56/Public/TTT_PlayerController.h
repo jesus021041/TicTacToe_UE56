@@ -8,6 +8,15 @@
 #include "UnitActionWidget.h" // Includiamo il nostro nuovo Widget
 #include "TTT_PlayerController.generated.h"
 
+// Enum per capire cosa sta facendo l'utente con il mouse in questo momento
+UENUM(BlueprintType)
+enum class EPlayerActionState : uint8
+{
+	Idle			UMETA(DisplayName = "Fermo"),
+	SelectingMove	UMETA(DisplayName = "Selezionando Movimento"),
+	SelectingAttack	UMETA(DisplayName = "Selezionando Attacco")
+};
+
 UCLASS()
 class TICTACTOE_UE56_API ATTT_PlayerController : public APlayerController
 {
@@ -27,6 +36,10 @@ public:
 	// L'istanza vera e propria creata a schermo
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
 	UUnitActionWidget* ActionWidgetInstance;
+
+	// Stato attuale dell'azione del giocatore
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+	EPlayerActionState CurrentActionState = EPlayerActionState::Idle;
 
 protected:
 	virtual void BeginPlay() override;

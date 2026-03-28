@@ -6,18 +6,19 @@
 #include "GameFramework/GameModeBase.h"
 #include "GameField.h"
 #include "BaseUnit.h"
-#include "TTT_ConfigData.h"
-#include "TTT_PlayerInterface.h"
+#include "TTT_ConfigData.h" // Aggiunto l'include corretto per la configurazione
+#include "TTT_GameInstance.h"
+#include "TTT_PlayerInterface.h" // FIX: Aggiunto l'include mancante per l'interfaccia!
 #include "TTT_GameMode.generated.h"
 
-// --- REQUISITO: Macchina a Stati per le Fasi della Partita ---
+// Enumeratore per gli stati di gioco
 UENUM(BlueprintType)
 enum class EGameState : uint8
 {
-	CoinFlip,
-	Placement,
-	Playing,
-	GameOver
+	CoinFlip		UMETA(DisplayName = "Lancio Moneta"),
+	Placement		UMETA(DisplayName = "Piazzamento"),
+	Playing			UMETA(DisplayName = "In Gioco"),
+	GameOver		UMETA(DisplayName = "Fine Partita")
 };
 
 UCLASS()
@@ -28,62 +29,63 @@ class TICTACTOE_UE56_API ATTT_GameMode : public AGameModeBase
 public:
 	ATTT_GameMode();
 
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
-
-	// Stato attuale della partita
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
-	EGameState CurrentGameState;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
-	bool IsGameOver;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
-	int32 MoveCounter;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
-	int32 CurrentPlayer;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
-	int32 StartingPlayer;
-
-	// --- Contatori per il Piazzamento ---
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
-	int32 Player0UnitsPlaced;
-
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
-	int32 Player1UnitsPlaced;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Config")
-	UTTT_ConfigData* GridData;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Config")
+	// Variabili di classe
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Game")
 	TSubclassOf<AGameField> GameFieldClass;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Config")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game")
 	AGameField* GField;
 
-	// --- Classi delle Unità da assegnare nel Blueprint ---
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Unit Config")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Game")
 	TSubclassOf<ABaseUnit> SniperClass;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Unit Config")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Game")
 	TSubclassOf<ABaseUnit> BrawlerClass;
 
-	// Array dei giocatori (0 = Umano, 1 = AI)
-	TArray<ITTT_PlayerInterface*> Players;
+	// Riferimenti alle unità in campo
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Units")
+	TArray<ABaseUnit*> Player0Units;
 
-	FTimerHandle ResetTimerHandle;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Units")
+	TArray<ABaseUnit*> Player1Units;
+
+	//LOGICA MOVE
+	UFUNCTION(BlueprintCallable, Category = "Movement")
+	TArray<FVector2D> GetReachableCells(FVector2D StartGridPos, int32 MovementRange);
+
+	UFUNCTION(BlueprintCallable, Category = "Movement")
+	void ClearTileHighlights();
+
+	UFUNCTION(BlueprintCallable, Category = "Grid")
+	ABaseUnit* GetUnitAtGridPosition(FVector2D GridPos);
+
+	UPROPERTY(EditDefaultsOnly)
+	UTTT_ConfigData* GridData;
 
 	int32 FieldSize;
 	float TileSize;
 	float CellPadding;
 
-	// Funzioni principali
-	void PerformCoinFlip();
-	void TurnNextPlayer();
-	int32 GetNextPlayer(int32 Player);
+	// Stato del gioco
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game State")
+	EGameState CurrentGameState;
 
-	// Funzione per piazzare (e in futuro muovere) le unità
+	int32 Player0UnitsPlaced;
+	int32 Player1UnitsPlaced;
+
+	TArray<ITTT_PlayerInterface*> Players;
+	int32 StartingPlayer;
+	int32 CurrentPlayer;
+	int32 MoveCounter;
+	bool IsGameOver;
+	FTimerHandle ResetTimerHandle;
+
+	// Funzioni di base
+	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	void PerformCoinFlip();
 	void SetCellSign(const int32 PlayerNumber, const FVector& SpawnPosition);
+	int32 GetNextPlayer(int32 Player);
+	void TurnNextPlayer();
 };

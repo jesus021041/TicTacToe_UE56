@@ -52,6 +52,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "Tile Appearance")
 	TArray<class UMaterialInterface*> ElevationMaterials;
 
+	// Funzione per accendere o spegnere l'evidenziazione (es. verde per movimento, rosso per attacco)
+	UFUNCTION(BlueprintImplementableEvent, Category = "Tile")
+	void SetTileHighlight(bool bIsHighlighted, FLinearColor HighlightColor);
+
 	// --- FINE NUOVE VARIABILI ---
 
 	void SetTileStatus(const int32 TileOwner, const ETileStatus TileStatus);

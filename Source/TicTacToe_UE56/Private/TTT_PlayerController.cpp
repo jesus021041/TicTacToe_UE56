@@ -2,8 +2,11 @@
 
 #include "TTT_PlayerController.h"
 #include "TTT_GameMode.h"
+#include "Tile.h"
 #include "Blueprint/UserWidget.h"
-#include "GameField.h" // Serve per capire se stiamo cliccando la griglia
+#include "GameField.h" 
+#include "Sniper.h"
+#include "Brawler.h"
 
 ATTT_PlayerController::ATTT_PlayerController()
 {
@@ -15,50 +18,31 @@ ATTT_PlayerController::ATTT_PlayerController()
 void ATTT_PlayerController::BeginPlay()
 {
 	Super::BeginPlay();
-
+	
 	FInputModeGameAndUI InputMode;
 	SetInputMode(InputMode);
 
-	// Creazione della UI (Menu Azioni)
 	if (ActionWidgetClass)
 	{
 		ActionWidgetInstance = CreateWidget<UUnitActionWidget>(this, ActionWidgetClass);
 		if (ActionWidgetInstance)
 		{
-			// Aggiungiamo alla viewport ma lo rendiamo invisibile finché non selezioniamo un'unità
 			ActionWidgetInstance->AddToViewport();
 			ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
-			UE_LOG(LogTemp, Warning, TEXT("UI Menu Inizializzato con successo."));
 		}
-	}
-	else
-	{
-		UE_LOG(LogTemp, Error, TEXT("ERRORE CRITICO: Non hai assegnato ActionWidgetClass nel BP_PlayerController!"));
 	}
 }
 
 void ATTT_PlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
-
-	// FIX: Bypassa le impostazioni di progetto di UE 5.6 e collega direttamente l'hardware del mouse!
 	InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &ATTT_PlayerController::OnLeftMouseClick);
 }
 
 void ATTT_PlayerController::OnLeftMouseClick()
 {
-	// LOG per capire se il click viene percepito dal motore
-	UE_LOG(LogTemp, Warning, TEXT("[Click] Mouse cliccato!"));
-
 	ATTT_GameMode* GameMode = Cast<ATTT_GameMode>(GetWorld()->GetAuthGameMode());
-	if (!GameMode) return;
-
-	// Se non è il nostro turno, ignoriamo il click
-	if (GameMode->CurrentPlayer != 0)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[Click] Rifiutato: Non e' il tuo turno. Tocca al giocatore %d"), GameMode->CurrentPlayer);
-		return;
-	}
+	if (!GameMode || GameMode->CurrentPlayer != 0) return;
 
 	FHitResult HitResult;
 	GetHitResultUnderCursor(ECC_Visibility, false, HitResult);
@@ -67,72 +51,141 @@ void ATTT_PlayerController::OnLeftMouseClick()
 	{
 		AActor* ClickedActor = HitResult.GetActor();
 
-		if (ClickedActor)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[Click] Hai colpito l'Actor: %s"), *ClickedActor->GetName());
-		}
-
-		// FASE I: PIAZZAMENTO (click la Griglia)
+		// FASE I: PIAZZAMENTO
 		if (GameMode->CurrentGameState == EGameState::Placement)
 		{
-			// Se stiamo cliccando su una cella (ATile)
 			if (ClickedActor && ClickedActor->IsA(ATile::StaticClass()))
 			{
-				// FIX MATEMATICO: Invece del punto esatto del mouse, prendiamo il centro perfetto della cella
 				FVector TileLocation = ClickedActor->GetActorLocation();
-
-				// Ricalcoliamo la posizione relativa al centro della scacchiera
 				FVector RelativeLocation = TileLocation - GameMode->GField->GetActorLocation();
-
-				UE_LOG(LogTemp, Warning, TEXT("[Piazzamento] Cella valida cliccata. Invio mossa..."));
-
-				// Chiamiamo il GameMode per fargli processare la nostra mossa (0 = Umano)
 				GameMode->SetCellSign(0, RelativeLocation);
 			}
-			else
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[Piazzamento] Errore: Non hai cliccato una cella calpestabile!"));
-			}
 		}
-		// FASE II: GIOCO (Selezione Unità e UI)
+		// FASE II: GIOCO
 		else if (GameMode->CurrentGameState == EGameState::Playing)
 		{
-			ABaseUnit* ClickedUnit = Cast<ABaseUnit>(ClickedActor);
+			// CASO A: STIAMO SELEZIONANDO DOVE MUOVERCI
+			if (CurrentActionState == EPlayerActionState::SelectingMove && SelectedUnit)
+			{
+				if (ClickedActor && ClickedActor->IsA(ATile::StaticClass()))
+				{
+					ATile* ClickedTile = Cast<ATile>(ClickedActor);
+					FVector2D TargetGridPos = ClickedTile->GetGridPosition();
 
+					// FIX per Blueprint Bug
+					int32 ActualRange = SelectedUnit->MovementRange;
+					if (ActualRange <= 0)
+					{
+						ActualRange = SelectedUnit->GetClass()->GetName().Contains(TEXT("Sniper")) ? 4 : 6;
+					}
+
+					TArray<FVector2D> ValidCells = GameMode->GetReachableCells(SelectedUnit->CurrentGridPosition, ActualRange);
+
+					bool bIsValidTarget = false;
+					for (FVector2D ValidCell : ValidCells)
+					{
+						if (FMath::RoundToInt(ValidCell.X) == FMath::RoundToInt(TargetGridPos.X) && 
+							FMath::RoundToInt(ValidCell.Y) == FMath::RoundToInt(TargetGridPos.Y))
+						{
+							bIsValidTarget = true;
+							break;
+						}
+					}
+
+					// Se l'utente clicca sulla cella in cui è già presente l'unità, annulla lo stato di movimento
+					if (FMath::RoundToInt(TargetGridPos.X) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.X) && 
+						FMath::RoundToInt(TargetGridPos.Y) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.Y))
+					{
+						UE_LOG(LogTemp, Warning, TEXT("[Movimento] Mossa annullata: hai cliccato sulla tua stessa cella."));
+						GameMode->ClearTileHighlights();
+						CurrentActionState = EPlayerActionState::Idle;
+						
+						// Riapre il menu normalmente
+						if (ActionWidgetInstance)
+						{
+							ActionWidgetInstance->UpdateUI(SelectedUnit);
+							ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+						}
+						return;
+					}
+
+					if (bIsValidTarget)
+					{
+						// 1. Libera la vecchia cella
+						for (ATile* Tile : GameMode->GField->TileArray)
+						{
+							if (Tile && 
+								FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.X) && 
+								FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.Y))
+							{
+								Tile->SetTileStatus(-1, ETileStatus::EMPTY);
+								break;
+							}
+						}
+
+						// 2. Sposta la pedina FORZANDO il teletrasporto (Bypassa le collisioni che potrebbero bloccarlo)
+						FVector NewLocation = ClickedTile->GetActorLocation();
+						NewLocation.Z += 60.f; 
+						SelectedUnit->SetActorLocation(NewLocation, false, nullptr, ETeleportType::TeleportPhysics);
+						
+						// 3. Aggiorna logica
+						SelectedUnit->CurrentGridPosition = TargetGridPos;
+						SelectedUnit->bHasActedThisTurn = true;
+						ClickedTile->SetTileStatus(SelectedUnit->PlayerOwner, ETileStatus::OCCUPIED);
+
+						// 4. Ripulisci grafica
+						GameMode->ClearTileHighlights();
+						CurrentActionState = EPlayerActionState::Idle;
+						
+						// LOGS DEFINITIVI DI SUCCESSO
+						UE_LOG(LogTemp, Warning, TEXT("[Movimento] SPOSTAMENTO SUCCESSO su Cella (%.0f, %.0f)!"), TargetGridPos.X, TargetGridPos.Y);
+						GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Green, TEXT("Mossa Completata con Successo!"));
+
+						// 5. Invece di deselezionare, RIAPRIAMO IL MENU per permettere all'utente di Attaccare o Finire il turno
+						if (ActionWidgetInstance)
+						{
+							ActionWidgetInstance->UpdateUI(SelectedUnit);
+							ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+						}
+					}
+					else
+					{
+						GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Mossa non valida: Cella troppo lontana o ostacolo!"));
+						UE_LOG(LogTemp, Warning, TEXT("[Movimento] Click su cella non valida o irragiungibile."));
+						GameMode->ClearTileHighlights();
+						CurrentActionState = EPlayerActionState::Idle;
+					}
+				}
+				else
+				{
+					GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Mossa Annullata (Hai cliccato fuori)!"));
+					UE_LOG(LogTemp, Warning, TEXT("[Movimento] Mossa annullata per click fuori dalla griglia."));
+					GameMode->ClearTileHighlights();
+					CurrentActionState = EPlayerActionState::Idle;
+				}
+				
+				return; 
+			}
+
+			// CASO B: SELEZIONE NORMALE UNITA'
+			ABaseUnit* ClickedUnit = Cast<ABaseUnit>(ClickedActor);
 			if (ClickedUnit)
 			{
-				if (ClickedUnit->PlayerOwner == 0) // L'unità è nostra
+				if (ClickedUnit->PlayerOwner == 0)
 				{
 					SelectedUnit = ClickedUnit;
-					GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan, TEXT("Unita' Selezionata!"));
-					UE_LOG(LogTemp, Warning, TEXT("[Selezione] Hai selezionato la tua unita'. Apro il Menu..."));
-
-					// Aggiorniamo e mostriamo il Widget Menu che hai creato!
 					if (ActionWidgetInstance)
 					{
 						ActionWidgetInstance->UpdateUI(SelectedUnit);
 						ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
 					}
 				}
-				else // L'unità è nemica
-				{
-					UE_LOG(LogTemp, Warning, TEXT("[Selezione] Unita' nemica!"));
-					GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Non puoi comandare un'unita' nemica!"));
-				}
 			}
 			else
 			{
-				// Se clicchiamo sul vuoto (o su una cella invece che sull'unità) -> menu va in OFF
 				SelectedUnit = nullptr;
-				if (ActionWidgetInstance)
-				{
-					ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
-				}
+				if (ActionWidgetInstance) ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
 			}
 		}
-	}
-	else
-	{
-		UE_LOG(LogTemp, Warning, TEXT("[Click] Hai cliccato nel vuoto cosmico."));
 	}
 }

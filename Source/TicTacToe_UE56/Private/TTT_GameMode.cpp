@@ -4,6 +4,7 @@
 #include "TTT_PlayerController.h"
 #include "TTT_HumanPlayer.h"
 #include "TTT_RandomPlayer.h"
+#include "Tile.h" 
 #include "EngineUtils.h"
 
 ATTT_GameMode::ATTT_GameMode()
@@ -16,22 +17,14 @@ void ATTT_GameMode::BeginPlay()
 {
 	Super::BeginPlay();
 
-	UE_LOG(LogTemp, Warning, TEXT("=== INIZIO PARTITA ==="));
-
 	IsGameOver = false;
 	MoveCounter = 0;
 	Player0UnitsPlaced = 0;
 	Player1UnitsPlaced = 0;
-
 	CurrentGameState = EGameState::CoinFlip;
 
 	ATTT_HumanPlayer* HumanPlayer = GetWorld()->GetFirstPlayerController()->GetPawn<ATTT_HumanPlayer>();
-
-	if (!IsValid(HumanPlayer))
-	{
-		UE_LOG(LogTemp, Error, TEXT("No player pawn found."));
-		return;
-	}
+	if (!IsValid(HumanPlayer)) return;
 
 	if (GridData)
 	{
@@ -43,7 +36,6 @@ void ATTT_GameMode::BeginPlay()
 	if (GameFieldClass != nullptr)
 	{
 		GField = GetWorld()->SpawnActor<AGameField>(GameFieldClass);
-		UE_LOG(LogTemp, Warning, TEXT("GameField Spawnato con successo."));
 	}
 
 	float CameraPosX = ((TileSize * FieldSize) + ((FieldSize - 1) * TileSize * CellPadding)) * 0.5f;
@@ -67,144 +59,90 @@ void ATTT_GameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void ATTT_GameMode::PerformCoinFlip()
 {
-	// FIX FONDAMENTALE: Assegniamo i PlayerNumber prima di iniziare!
-	// Senza questo, l'IA pensava di essere il Giocatore 0 e il GameMode rifiutava le sue mosse!
 	for (int32 i = 0; i < Players.Num(); i++)
 	{
-		if (Players[i])
-		{
-			Players[i]->PlayerNumber = i;
-		}
+		if (Players[i]) Players[i]->PlayerNumber = i;
 	}
 
 	StartingPlayer = FMath::RandRange(0, 1);
 	CurrentPlayer = StartingPlayer;
-
-	UE_LOG(LogTemp, Warning, TEXT("=== LANCIO MONETA ESEGUITO ==="));
-	UE_LOG(LogTemp, Warning, TEXT("Ha vinto il Giocatore: %d (0 = Umano, 1 = IA)"), CurrentPlayer);
-
-	if (CurrentPlayer == 0)
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Green, TEXT("LANCIO MONETA: Inizi tu a piazzare!"));
-	}
-	else
-	{
-		GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Orange, TEXT("LANCIO MONETA: L'IA inizia a piazzare!"));
-	}
-
 	CurrentGameState = EGameState::Placement;
 	Players[CurrentPlayer]->OnTurn();
 }
 
 void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPosition)
 {
-	UE_LOG(LogTemp, Warning, TEXT("-> SetCellSign chiamato dal Player %d"), PlayerNumber);
-
-	if (IsGameOver || PlayerNumber != CurrentPlayer)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("Azione rifiutata. IsGameOver: %d, Player che ci prova: %d, Player di turno: %d"), IsGameOver, PlayerNumber, CurrentPlayer);
-		return;
-	}
+	if (IsGameOver || PlayerNumber != CurrentPlayer) return;
 
 	FVector2D GridPosRaw = GField->GetXYPositionByRelativeLocation(SpawnPosition);
+	FVector2D GridPos(FMath::RoundToDouble(GridPosRaw.X), FMath::RoundToDouble(GridPosRaw.Y));
 
-	// Arrotondiamo i float per trovare con precisione le celle nella TMap
-	FVector2D GridPos;
-	GridPos.X = FMath::RoundToDouble(GridPosRaw.X);
-	GridPos.Y = FMath::RoundToDouble(GridPosRaw.Y);
-
-	UE_LOG(LogTemp, Warning, TEXT("Posizione convertita in Grid (X, Y): (%f, %f)"), GridPos.X, GridPos.Y);
-
-	// --- FASE 1: PIAZZAMENTO ---
 	if (CurrentGameState == EGameState::Placement)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Stato attuale: PIAZZAMENTO. Il Player %d sta cercando di piazzare."), CurrentPlayer);
-
-		// REQUISITO PDF: Limitazione Aree di Schieramento
 		if (CurrentPlayer == 0 && GridPos.Y > 2)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Azione rifiutata: L'umano ha cercato di piazzare oltre Y=2 (La sua Y era %f)"), GridPos.Y);
-			GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Umano: Piazza solo nelle righe Y=0, 1, 2!"));
-			Players[CurrentPlayer]->OnTurn(); // Rifà il turno senza avanzare
+			Players[CurrentPlayer]->OnTurn();
 			return;
 		}
-		if (CurrentPlayer == 1 && GridPos.Y < 22)
+		if (CurrentPlayer == 1 && GridPos.Y < FieldSize - 3)
 		{
-			UE_LOG(LogTemp, Warning, TEXT("Azione rifiutata: L'IA ha cercato di piazzare sotto Y=22 (La sua Y era %f). Riprova."), GridPos.Y);
 			Players[CurrentPlayer]->OnTurn();
 			return;
 		}
 
 		int32& UnitsPlaced = (CurrentPlayer == 0) ? Player0UnitsPlaced : Player1UnitsPlaced;
-
-		// La prima unità è lo Sniper, la seconda il Brawler
 		TSubclassOf<ABaseUnit> UnitToSpawn = (UnitsPlaced == 0) ? SniperClass : BrawlerClass;
-
-		if (!UnitToSpawn)
-		{
-			UE_LOG(LogTemp, Error, TEXT("ERRORE CRITICO: UnitToSpawn è vuota! Non hai assegnato la Blueprint (SniperClass o BrawlerClass) nell'editor di Unreal!"));
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, TEXT("ERRORE CRITICO: Assegna Sniper/Brawler Class nel BP!"));
-		}
 
 		if (UnitToSpawn && GField)
 		{
 			ATile* TargetTile = nullptr;
-			if (GField->TileMap.Contains(GridPos))
+			for (ATile* Tile : GField->TileArray)
 			{
-				TargetTile = GField->TileMap[GridPos];
-				UE_LOG(LogTemp, Warning, TEXT("Cella bersaglio trovata con successo nella TileMap!"));
-			}
-			else
-			{
-				UE_LOG(LogTemp, Error, TEXT("ERRORE: Impossibile trovare la cella (%f, %f) nella TileMap!"), GridPos.X, GridPos.Y);
+				if (Tile && FMath::IsNearlyEqual(Tile->GetGridPosition().X, GridPos.X) && FMath::IsNearlyEqual(Tile->GetGridPosition().Y, GridPos.Y))
+				{
+					TargetTile = Tile;
+					break;
+				}
 			}
 
-			if (TargetTile)
+			if (TargetTile && TargetTile->GetTileStatus() == ETileStatus::EMPTY)
 			{
-				FVector Location = TargetTile->GetActorLocation(); // Prendiamo la Z reale del terreno!
-				Location.Z += 60.0f; // Solleviamo la pedina dal suolo
-
-				UE_LOG(LogTemp, Warning, TEXT("Tentativo di spawn Actor in posizione: %s"), *Location.ToString());
+				FVector Location = TargetTile->GetActorLocation();
+				Location.Z += 60.0f;
 
 				ABaseUnit* NewUnit = GetWorld()->SpawnActor<ABaseUnit>(UnitToSpawn, Location, FRotator::ZeroRotator);
 				if (NewUnit)
 				{
 					NewUnit->PlayerOwner = CurrentPlayer;
-					UE_LOG(LogTemp, Warning, TEXT("Spawn Avvenuto con successo per il Player %d!"), CurrentPlayer);
-				}
-				else
-				{
-					UE_LOG(LogTemp, Error, TEXT("ERRORE DURANTE LO SPAWN DELL'ACTOR! (Problema di collisioni o classe errata)"));
-				}
+					NewUnit->CurrentGridPosition = GridPos;
 
-				// Blocchiamo la cella
-				TargetTile->SetTileStatus(CurrentPlayer, ETileStatus::OCCUPIED);
+					if (CurrentPlayer == 0) Player0Units.Add(NewUnit);
+					else Player1Units.Add(NewUnit);
 
-				UnitsPlaced++;
-				FString UnitName = (UnitsPlaced == 1) ? TEXT("Sniper") : TEXT("Brawler");
-				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Cyan, FString::Printf(TEXT("Giocatore %d ha piazzato: %s"), CurrentPlayer, *UnitName));
+					TargetTile->SetTileStatus(CurrentPlayer, ETileStatus::OCCUPIED);
+					UnitsPlaced++;
+				}
 			}
 		}
 
-		// Se entrambi hanno piazzato 2 unità, Inizia la Battaglia!
 		if (Player0UnitsPlaced == 2 && Player1UnitsPlaced == 2)
 		{
 			CurrentGameState = EGameState::Playing;
-			UE_LOG(LogTemp, Warning, TEXT("=== FASE PIAZZAMENTO CONCLUSA - INIZIA LA BATTAGLIA ==="));
-			GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Emerald, TEXT("PIAZZAMENTO CONCLUSO! Inizia la battaglia."));
 
-			// Il primo turno vero va a chi ha vinto la moneta
+			ATTT_PlayerController* PC = Cast<ATTT_PlayerController>(GetWorld()->GetFirstPlayerController());
+			if (PC && PC->ActionWidgetInstance)
+			{
+				PC->ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
+			}
+
 			CurrentPlayer = StartingPlayer;
 			Players[CurrentPlayer]->OnTurn();
 			return;
 		}
-
 		TurnNextPlayer();
 	}
-	// --- FASE 2: GIOCO (Da implementare in seguito) ---
 	else if (CurrentGameState == EGameState::Playing)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("Fase GIOCO, il player %d passa la mossa."), CurrentPlayer);
 		TurnNextPlayer();
 	}
 }
@@ -212,10 +150,7 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 int32 ATTT_GameMode::GetNextPlayer(int32 Player)
 {
 	Player++;
-	if (!Players.IsValidIndex(Player))
-	{
-		Player = 0;
-	}
+	if (!Players.IsValidIndex(Player)) Player = 0;
 	return Player;
 }
 
@@ -223,6 +158,164 @@ void ATTT_GameMode::TurnNextPlayer()
 {
 	MoveCounter += 1;
 	CurrentPlayer = GetNextPlayer(CurrentPlayer);
-	UE_LOG(LogTemp, Warning, TEXT("---- PASSO IL TURNO AL GIOCATORE %d ----"), CurrentPlayer);
+
+	TArray<ABaseUnit*> CurrentUnits = (CurrentPlayer == 0) ? Player0Units : Player1Units;
+	for (ABaseUnit* Unit : CurrentUnits)
+	{
+		if (Unit) Unit->bHasActedThisTurn = false;
+	}
 	Players[CurrentPlayer]->OnTurn();
+}
+
+// LOGICA DI MOVIMENTO
+
+void ATTT_GameMode::ClearTileHighlights()
+{
+	if (!GField) return;
+	for (ATile* Tile : GField->TileArray)
+	{
+		if (Tile) Tile->SetTileHighlight(false, FLinearColor::Black);
+	}
+}
+
+ABaseUnit* ATTT_GameMode::GetUnitAtGridPosition(FVector2D GridPos)
+{
+	for (ABaseUnit* Unit : Player0Units)
+	{
+		if (Unit && FMath::IsNearlyEqual(Unit->CurrentGridPosition.X, GridPos.X) && FMath::IsNearlyEqual(Unit->CurrentGridPosition.Y, GridPos.Y)) return Unit;
+	}
+	for (ABaseUnit* Unit : Player1Units)
+	{
+		if (Unit && FMath::IsNearlyEqual(Unit->CurrentGridPosition.X, GridPos.X) && FMath::IsNearlyEqual(Unit->CurrentGridPosition.Y, GridPos.Y)) return Unit;
+	}
+	return nullptr;
+}
+
+TArray<FVector2D> ATTT_GameMode::GetReachableCells(FVector2D StartGridPos, int32 MovementRange)
+{
+	TArray<FVector2D> ReachableCells;
+	if (!GField) return ReachableCells;
+
+	UE_LOG(LogTemp, Warning, TEXT("[Pathfinding] --- INIZIO RICERCA ---"));
+	UE_LOG(LogTemp, Warning, TEXT("[Pathfinding] Partenza: (%.0f, %.0f), Raggio: %d"), StartGridPos.X, StartGridPos.Y, MovementRange);
+
+	auto GetTileSafely = [&](FVector2D Pos) -> ATile* {
+		int32 TargetX = FMath::RoundToInt(Pos.X);
+		int32 TargetY = FMath::RoundToInt(Pos.Y);
+
+		for (ATile* T : GField->TileArray) {
+			if (T) {
+				int32 TileX = FMath::RoundToInt(T->GetGridPosition().X);
+				int32 TileY = FMath::RoundToInt(T->GetGridPosition().Y);
+				if (TileX == TargetX && TileY == TargetY) {
+					return T;
+				}
+			}
+		}
+		return nullptr;
+		};
+
+	ATile* StartTile = GetTileSafely(StartGridPos);
+	if (!StartTile)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[Pathfinding] ERRORE: La cella di partenza non esiste!"));
+		return ReachableCells;
+	}
+
+	TArray<TPair<FVector2D, int32>> Frontier;
+	TArray<FVector2D> Visited;
+	TArray<int32> VisitedCosts;
+
+	Frontier.Add(TPair<FVector2D, int32>(StartGridPos, 0));
+	Visited.Add(StartGridPos);
+	VisitedCosts.Add(0);
+
+	FVector2D Directions[4] = { FVector2D(0, 1), FVector2D(0, -1), FVector2D(1, 0), FVector2D(-1, 0) };
+
+	int32 Iterations = 0;
+
+	while (Frontier.Num() > 0)
+	{
+		Iterations++;
+		if (Iterations > 2000) break; // Salvavita anti loop-infinito
+
+		FVector2D CurrentPos = Frontier[0].Key;
+		int32 CurrentCost = Frontier[0].Value;
+		Frontier.RemoveAt(0);
+
+		ATile* CurrentTile = GetTileSafely(CurrentPos);
+		if (!CurrentTile) continue;
+
+		float CurrentElevation = CurrentTile->GetActorLocation().Z;
+
+		// Esploriamo i 4 vicini
+		for (int i = 0; i < 4; ++i)
+		{
+			FVector2D NextPos = CurrentPos + Directions[i];
+
+			// 1. Controllo Limiti Mappa
+			if (NextPos.X < 0 || NextPos.X >= FieldSize || NextPos.Y < 0 || NextPos.Y >= FieldSize) continue;
+
+			ATile* NextTile = GetTileSafely(NextPos);
+			if (!NextTile) continue;
+
+			// 2. Controllo Ostacoli (Acqua, Torri e Unità sono tutte state settate come OCCUPIED)
+			bool bIsStartPos = (FMath::RoundToInt(NextPos.X) == FMath::RoundToInt(StartGridPos.X)) &&
+				(FMath::RoundToInt(NextPos.Y) == FMath::RoundToInt(StartGridPos.Y));
+
+			if (NextTile->GetTileStatus() == ETileStatus::OCCUPIED && !bIsStartPos)
+			{
+				continue; // È acqua, una torre o un nemico. La scartiamo in automatico!
+			}
+
+			// 3. Calcolo Costo Elevazione (Se la mappa è piatta, costa sempre 1)
+			float NextElevation = NextTile->GetActorLocation().Z;
+			int32 MoveCost = (NextElevation > CurrentElevation + 10.0f) ? 2 : 1;
+			int32 NewCost = CurrentCost + MoveCost;
+
+			// 4. Controllo se superiamo il raggio d'azione
+			if (NewCost > MovementRange) continue;
+
+			// 5. Aggiornamento percorsi migliori
+			bool bAlreadyVisited = false;
+			for (int32 v = 0; v < Visited.Num(); ++v)
+			{
+				if (FMath::RoundToInt(Visited[v].X) == FMath::RoundToInt(NextPos.X) &&
+					FMath::RoundToInt(Visited[v].Y) == FMath::RoundToInt(NextPos.Y))
+				{
+					bAlreadyVisited = true;
+					if (NewCost < VisitedCosts[v])
+					{
+						VisitedCosts[v] = NewCost;
+						bAlreadyVisited = false;
+					}
+					break;
+				}
+			}
+
+			if (!bAlreadyVisited)
+			{
+				Visited.Add(NextPos);
+				VisitedCosts.Add(NewCost);
+				Frontier.Add(TPair<FVector2D, int32>(NextPos, NewCost));
+
+				bool bInReachable = false;
+				for (FVector2D R : ReachableCells)
+				{
+					if (FMath::RoundToInt(R.X) == FMath::RoundToInt(NextPos.X) && FMath::RoundToInt(R.Y) == FMath::RoundToInt(NextPos.Y))
+					{
+						bInReachable = true; break;
+					}
+				}
+				if (!bInReachable)
+				{
+					ReachableCells.Add(NextPos);
+					UE_LOG(LogTemp, Warning, TEXT(">>> AGGIUNTA CELLA VALIDA: (%.0f, %.0f) con costo %d"), NextPos.X, NextPos.Y, NewCost);
+				}
+			}
+		}
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[Pathfinding] --- FINE RICERCA. Celle Totali Trovate: %d ---"), ReachableCells.Num());
+	return ReachableCells;
 }
