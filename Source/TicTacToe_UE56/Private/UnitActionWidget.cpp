@@ -3,33 +3,23 @@
 #include "UnitActionWidget.h"
 #include "TTT_PlayerController.h"
 #include "TTT_GameMode.h"
-#include "Tile.h" // Necessario per chiamare SetTileHighlight sulle celle
+#include "Tile.h"
 
 void UUnitActionWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	if (MoveButton)
-	{
-		MoveButton->OnClicked.AddDynamic(this, &UUnitActionWidget::OnMoveButtonClicked);
-	}
-	if (AttackButton)
-	{
-		AttackButton->OnClicked.AddDynamic(this, &UUnitActionWidget::OnAttackButtonClicked);
-	}
-	if (EndTurnButton)
-	{
-		EndTurnButton->OnClicked.AddDynamic(this, &UUnitActionWidget::OnEndTurnButtonClicked);
-	}
+	if (MoveButton) MoveButton->OnClicked.AddDynamic(this, &UUnitActionWidget::OnMoveButtonClicked);
+	if (AttackButton) AttackButton->OnClicked.AddDynamic(this, &UUnitActionWidget::OnAttackButtonClicked);
+	if (EndTurnButton) EndTurnButton->OnClicked.AddDynamic(this, &UUnitActionWidget::OnEndTurnButtonClicked);
 }
 
 void UUnitActionWidget::UpdateUI(ABaseUnit* InSelectedUnit)
 {
 	if (!InSelectedUnit) return;
-
 	CurrentUnit = InSelectedUnit;
 
-	FString NameStr = (CurrentUnit->AttackRange > 1) ? TEXT("SNIPER") : TEXT("BRAWLER");
+	FString NameStr = (CurrentUnit->GetClass()->GetName().Contains(TEXT("Sniper"))) ? TEXT("SNIPER") : TEXT("BRAWLER");
 	if (UnitNameText) UnitNameText->SetText(FText::FromString(NameStr));
 
 	if (HPText)
@@ -46,19 +36,30 @@ void UUnitActionWidget::UpdateUI(ABaseUnit* InSelectedUnit)
 
 	if (MovementText)
 	{
-		FString MovStr = FString::Printf(TEXT("Movimento: %d"), CurrentUnit->MovementRange);
+		int32 ActualRange = CurrentUnit->MovementRange;
+		if (ActualRange <= 0) ActualRange = CurrentUnit->GetClass()->GetName().Contains(TEXT("Sniper")) ? 4 : 6;
+		FString MovStr = FString::Printf(TEXT("Movimento: %d"), ActualRange);
 		MovementText->SetText(FText::FromString(MovStr));
 	}
 
 	bool bCanAct = !CurrentUnit->bHasActedThisTurn;
-	if (MoveButton) MoveButton->SetIsEnabled(bCanAct);
+
+	// EXTRA SICUREZZA: Disabilita il tasto Muovi se si è già mossa in questo turno
+	ATTT_PlayerController* PC = Cast<ATTT_PlayerController>(GetOwningPlayer());
+	if (PC && PC->UnitThatMovedThisTurn == CurrentUnit)
+	{
+		if (MoveButton) MoveButton->SetIsEnabled(false);
+	}
+	else
+	{
+		if (MoveButton) MoveButton->SetIsEnabled(bCanAct);
+	}
+
 	if (AttackButton) AttackButton->SetIsEnabled(bCanAct);
 }
 
 void UUnitActionWidget::OnMoveButtonClicked()
 {
-	UE_LOG(LogTemp, Warning, TEXT("[UI] Hai premuto il tasto MUOVI!"));
-
 	ATTT_PlayerController* PC = Cast<ATTT_PlayerController>(GetOwningPlayer());
 	if (PC && CurrentUnit)
 	{
@@ -67,47 +68,82 @@ void UUnitActionWidget::OnMoveButtonClicked()
 		ATTT_GameMode* GameMode = Cast<ATTT_GameMode>(GetWorld()->GetAuthGameMode());
 		if (GameMode && GameMode->GField)
 		{
-			// Calcola le celle raggiungibili
-			TArray<FVector2D> ValidCells = GameMode->GetReachableCells(CurrentUnit->CurrentGridPosition, CurrentUnit->MovementRange);
+			int32 ActualRange = CurrentUnit->MovementRange;
+			if (ActualRange <= 0) ActualRange = CurrentUnit->GetClass()->GetName().Contains(TEXT("Sniper")) ? 4 : 6;
 
+			TArray<FVector2D> ValidCells = GameMode->GetReachableCells(CurrentUnit->CurrentGridPosition, ActualRange);
+
+			//ILLUMINAZIONE VERDE (Movimento) -> TODO  [nn si vede]
 			for (FVector2D CellPos : ValidCells)
 			{
-				// FIX: Accesso diretto e sicuro alla TileMap al posto del vecchio GetTileAtPosition
-				if (GameMode->GField->TileMap.Contains(CellPos))
+				for (ATile* Tile : GameMode->GField->TileArray)
 				{
-					ATile* Tile = GameMode->GField->TileMap[CellPos];
-					if (Tile)
+					if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(CellPos.X) &&
+						FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(CellPos.Y))
 					{
-						// Colore Verde (R=0, G=1, B=0)
-						Tile->SetTileHighlight(true, FLinearColor(0.0f, 1.0f, 0.0f, 1.0f));
+						Tile->SetTileHighlight(true, FLinearColor(0.0f, 1.0f, 0.0f, 1.0f)); // Verde
+						break;
 					}
 				}
 			}
 		}
-		GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Yellow, TEXT("Seleziona una cella per muoverti!"));
 	}
-
 	SetVisibility(ESlateVisibility::Hidden);
 }
 
 void UUnitActionWidget::OnAttackButtonClicked()
 {
 	UE_LOG(LogTemp, Warning, TEXT("[UI] Hai premuto il tasto ATTACCA!"));
+
+	ATTT_PlayerController* PC = Cast<ATTT_PlayerController>(GetOwningPlayer());
+	if (PC && CurrentUnit)
+	{
+		// COMUNICHIAMO AL CONTROLLER DI PREPARARSI ALL'ATTACCO
+		PC->CurrentActionState = EPlayerActionState::SelectingAttack;
+		GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Orange, TEXT("Seleziona un nemico nelle caselle ROSSE!"));
+
+		ATTT_GameMode* GameMode = Cast<ATTT_GameMode>(GetWorld()->GetAuthGameMode());
+		if (GameMode && GameMode->GField)
+		{
+			// Calcoliamo il range di attacco
+			int32 ActualAttackRange = CurrentUnit->AttackRange > 0 ? CurrentUnit->AttackRange : (CurrentUnit->GetClass()->GetName().Contains(TEXT("Sniper")) ? 10 : 1);
+
+			//ILLUMINAZIONE ROSSA (Attacco) -> TODO [nn si vede]
+			for (ATile* Tile : GameMode->GField->TileArray)
+			{
+				if (Tile)
+				{
+					int32 DistX = FMath::Abs(FMath::RoundToInt(CurrentUnit->CurrentGridPosition.X) - FMath::RoundToInt(Tile->GetGridPosition().X));
+					int32 DistY = FMath::Abs(FMath::RoundToInt(CurrentUnit->CurrentGridPosition.Y) - FMath::RoundToInt(Tile->GetGridPosition().Y));
+
+					// La Distanza di Manhattan. Se rientra nel Range (ma > 0 per non colpire se stessi)
+					if ((DistX + DistY) > 0 && (DistX + DistY) <= ActualAttackRange)
+					{
+						Tile->SetTileHighlight(true, FLinearColor(1.0f, 0.0f, 0.0f, 1.0f));
+					}
+				}
+			}
+		}
+	}
+
+	SetVisibility(ESlateVisibility::Hidden);
 }
 
 void UUnitActionWidget::OnEndTurnButtonClicked()
 {
-	UE_LOG(LogTemp, Warning, TEXT("[UI] Hai premuto il tasto FINE TURNO!"));
-
-	// Nascondiamo noi stessi
 	SetVisibility(ESlateVisibility::Hidden);
-
-	// Troviamo il GameMode e passiamo il turno
 	if (GetWorld())
 	{
 		ATTT_GameMode* GameMode = Cast<ATTT_GameMode>(GetWorld()->GetAuthGameMode());
-		if (GameMode)
+		ATTT_PlayerController* PC = Cast<ATTT_PlayerController>(GetOwningPlayer());
+		if (GameMode && PC)
 		{
+			if (CurrentUnit) CurrentUnit->bHasActedThisTurn = true;
+
+			PC->CurrentActionState = EPlayerActionState::Idle;
+			PC->UnitThatMovedThisTurn = nullptr;
+			GameMode->ClearTileHighlights();
+
 			GameMode->TurnNextPlayer();
 		}
 	}

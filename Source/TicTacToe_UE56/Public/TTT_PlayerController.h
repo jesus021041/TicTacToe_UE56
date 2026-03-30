@@ -5,7 +5,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
 #include "BaseUnit.h"
-#include "UnitActionWidget.h" // Includiamo il nostro nuovo Widget
+#include "UnitActionWidget.h"
 #include "TTT_PlayerController.generated.h"
 
 // Enum per capire cosa sta facendo l'utente con il mouse in questo momento
@@ -40,6 +40,10 @@ public:
 	// Stato attuale dell'azione del giocatore
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
 	EPlayerActionState CurrentActionState = EPlayerActionState::Idle;
+
+	// TRACCIA L'UNITA' CHE SI E' MOSSA QUESTO TURNO
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+	ABaseUnit* UnitThatMovedThisTurn = nullptr;
 
 protected:
 	virtual void BeginPlay() override;
