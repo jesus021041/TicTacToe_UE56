@@ -6,7 +6,6 @@
 #include "GameFramework/Actor.h"
 #include "Tile.generated.h"
 
-// Se questo enum è in un altro file nel tuo progetto, puoi rimuovere questa dichiarazione
 UENUM(BlueprintType)
 enum class ETileStatus : uint8
 {
@@ -38,7 +37,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile State")
 	FVector2D TileGridPosition;
 
-	// --- NUOVE VARIABILI PER LA MAPPA 25x25 ---
+	// VARIABILI PER LA MAPPA 25x25
 
 	// Livello di altezza (0=Acqua, 1=Pianura, 2,3,4=Montagne)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile State")
@@ -55,8 +54,6 @@ public:
 	// Funzione per accendere o spegnere l'evidenziazione (es. verde per movimento, rosso per attacco)
 	UFUNCTION(BlueprintImplementableEvent, Category = "Tile")
 	void SetTileHighlight(bool bIsHighlighted, FLinearColor HighlightColor);
-
-	// --- FINE NUOVE VARIABILI ---
 
 	void SetTileStatus(const int32 TileOwner, const ETileStatus TileStatus);
 	ETileStatus GetTileStatus();

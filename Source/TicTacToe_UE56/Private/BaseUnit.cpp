@@ -40,7 +40,7 @@ void ABaseUnit::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 }
 
-// --- LOGICA DELL'UNITA' ---
+//LOGICA DELL'UNITA'
 
 int32 ABaseUnit::CalculateDamage() const
 {

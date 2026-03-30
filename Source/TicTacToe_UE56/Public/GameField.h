@@ -62,7 +62,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Config")
 	UTTT_ConfigData* GridData;
 
-	// --- PARAMETRI PER LA GENERAZIONE PROCEDURALE (PERLIN NOISE) ---
+	//PARAMETRI PER LA GENERAZIONE PROCEDURALE (PERLIN NOISE):
 
 	// Seed casuale per avere mappe diverse ad ogni esecuzione
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MapConfig")
@@ -75,8 +75,6 @@ public:
 	// Moltiplicatore visivo per l'altezza Z ad ogni livello (0-4)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "MapConfig")
 	float ZMultiplier;
-
-	// ---------------------------------------------------------------
 
 	// Sets default values for this actor's properties
 	AGameField();
@@ -94,8 +92,8 @@ public:
 	// generate an empty game field
 	void GenerateField();
 
-	// --- FUNZIONI PER LE TORRI ---
 
+	//FUNZIONI PER LE TORRI:
 	// Gestisce il posizionamento delle 3 torri sulla mappa
 	void SpawnTowers();
 
@@ -115,9 +113,4 @@ public:
 
 	// return (x,y) position given a relative position
 	FVector2D GetXYPositionByRelativeLocation(const FVector& Location) const;
-
-	//public:	
-	//	// Called every frame
-	//	virtual void Tick(float DeltaTime) override;
-
 };

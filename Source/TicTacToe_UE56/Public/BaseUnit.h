@@ -48,7 +48,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
 	EAttackType AttackType;
 
-	//GESTIONE GIOCO
+	//GESTIONE GIOCO:
+	
 	// 0 per Umano && 1 per IA
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game")
 	int32 PlayerOwner;
@@ -61,7 +62,7 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game")
 	bool bHasActedThisTurn = false;
 
-	// === METODI DI COMBATTIMENTO ===
+	//METODI DI COMBATTIMENTO
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	int32 CalculateDamage() const;
 

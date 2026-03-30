@@ -9,7 +9,7 @@
 // Sets default values
 ABaseSign::ABaseSign()
 {
-	// Disattiviamo il Tick perché per i Segni/Torri non serve e consuma solo performance
+	// Disattivare il Tick
 	PrimaryActorTick.bCanEverTick = false;
 }
 

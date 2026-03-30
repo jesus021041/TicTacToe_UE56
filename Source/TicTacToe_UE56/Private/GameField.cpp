@@ -6,7 +6,7 @@
 #include "TTT_GameMode.h"
 #include "Math/UnrealMathUtility.h" // Necessario per la funzione FMath::PerlinNoise2D
 #include "Misc/DateTime.h"          // Necessario per il vero random basato sul tempo
-#include "Math/RandomStream.h"      // FIX: Gestione corretta e indipendente del Seed
+#include "Math/RandomStream.h"      //Gestione corretta e indipendente del Seed
 
 // Sets default values
 AGameField::AGameField()
@@ -16,7 +16,7 @@ AGameField::AGameField()
 
 	// Scala per avere macchie ampie e naturali.
 	NoiseScale = 0.08f;
-	ZMultiplier = 60.0f; // Leggermente aumentato per rendere i gradini più distinguibili
+	ZMultiplier = 60.0f;
 }
 
 void AGameField::OnConstruction(const FTransform& Transform)
@@ -49,10 +49,9 @@ void AGameField::BeginPlay()
 	// Usiamo i Ticks del tempo reale di sistema per un vero Random!
 	RandomSeed = FDateTime::Now().GetTicks() % 9999999;
 
-	UE_LOG(LogTemp, Warning, TEXT("======================================="));
-	UE_LOG(LogTemp, Warning, TEXT("=== INIZIO GENERAZIONE MAPPA 25x25 ==="));
+	UE_LOG(LogTemp, Warning, TEXT("-----> INIZIO GENERAZIONE MAPPA 25x25 <-----"));
 	UE_LOG(LogTemp, Warning, TEXT("Seed Casuale Generato dal Tempo: %d"), RandomSeed);
-	UE_LOG(LogTemp, Warning, TEXT("======================================="));
+	UE_LOG(LogTemp, Warning, TEXT("----------------------------------------------"));
 
 	// 1. Genera la Mappa Procedurale
 	GenerateField();
@@ -118,7 +117,7 @@ void AGameField::GenerateField()
 			float Noise = FMath::PerlinNoise2D(FVector2D(SampleX, SampleY));
 			int32 FlatIndex = IndexY * Size + IndexX;
 			NoiseCells.Add({ FlatIndex, Noise });
-			RawNoises[FlatIndex] = Noise; // Salviamo il rumore grezzo per la riparazione
+			RawNoises[FlatIndex] = Noise;
 		}
 	}
 
@@ -139,9 +138,7 @@ void AGameField::GenerateField()
 		FinalElevations[NoiseCells[i].Index] = Level;
 	}
 
-	// =====================================================================
 	// ALGORITMO DI RIPARAZIONE ISOLE (Garantisce 1 singolo continente)
-	// =====================================================================
 	TArray<int32> ComponentLabels;
 	ComponentLabels.Init(-1, TotalCells);
 	TMap<int32, int32> ComponentSizes;
@@ -253,12 +250,9 @@ void AGameField::GenerateField()
 	else {
 		UE_LOG(LogTemp, Warning, TEXT("Mappa perfetta! Nessuna isola isolata generata."));
 	}
-	// =====================================================================
 
-
-	// ----------------------------------------------------------------------
 	// SPAWN FISICO DEI TILE
-	// ----------------------------------------------------------------------
+
 	for (int32 IndexX = 0; IndexX < Size; IndexX++)
 	{
 		for (int32 IndexY = 0; IndexY < Size; IndexY++)
@@ -301,9 +295,9 @@ void AGameField::SpawnTowers()
 	// Se il centro è (12,12), e la sinistra è (5, 12), la destra per essere equidistante
 	// deve essere 12 + (12 - 5) = 19 sull'asse X. 
 	TArray<FVector2D> IdealTowerPositions = {
-		FVector2D(12, 12), // Torre Centrale
-		FVector2D(5, 12),  // Torre Laterale Sinistra
-		FVector2D(19, 12)  // Torre Laterale Destra
+		FVector2D(12, 12), // Torre CC
+		FVector2D(5, 12),  // Torre SX
+		FVector2D(19, 12)  // Torre DX
 	};
 
 	for (int32 i = 0; i < IdealTowerPositions.Num(); i++)
@@ -332,7 +326,6 @@ void AGameField::SpawnTowers()
 			}
 			else
 			{
-				// FALLBACK: Trucco Visivo se non è stato assegnato alcun Blueprint nell'editor
 				FVector CurrentScale = BestTile->GetActorScale3D();
 				BestTile->SetActorScale3D(FVector(CurrentScale.X, CurrentScale.Y, CurrentScale.Z + 3.0f));
 
@@ -353,7 +346,7 @@ ATile* AGameField::GetNearestValidTileForTower(FVector2D TargetPos)
 
 	for (ATile* Tile : TileArray)
 	{
-		// REQUISITI ADATTIVI:
+		// REQUISITI:
 		// - Deve essere Terra, non Acqua (ElevationLevel > 0)
 		// - Deve essere vuota, per evitare che due torri spawnino nello stesso Tile
 		if (Tile->ElevationLevel > 0 && Tile->GetTileStatus() == ETileStatus::EMPTY)

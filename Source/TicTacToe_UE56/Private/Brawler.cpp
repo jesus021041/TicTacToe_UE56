@@ -4,7 +4,7 @@
 
 ABrawler::ABrawler()
 {
-	// Assegnazione delle statistiche come da specifiche PDF
+	//Statistiche:
 	MovementRange = 6;
 	AttackType = EAttackType::Melee; // Attacco a corto raggio
 	AttackRange = 1;

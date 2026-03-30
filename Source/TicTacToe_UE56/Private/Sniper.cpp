@@ -4,7 +4,7 @@
 
 ASniper::ASniper()
 {
-	// Assegnazione delle statistiche come da specifiche PDF
+	//Statistiche
 	MovementRange = 4;
 	AttackType = EAttackType::Ranged; // Attacco a distanza
 	AttackRange = 10;
