@@ -67,7 +67,9 @@ void ATTT_PlayerController::OnLeftMouseClick()
 		// FASE II: GIOCO
 		else if (GameMode->CurrentGameState == EGameState::Playing)
 		{
+			// ==========================================
 			// CASO A: STIAMO SELEZIONANDO DOVE MUOVERCI
+			// ==========================================
 			if (CurrentActionState == EPlayerActionState::SelectingMove && SelectedUnit)
 			{
 				if (ClickedActor && ClickedActor->IsA(ATile::StaticClass()))
@@ -75,6 +77,7 @@ void ATTT_PlayerController::OnLeftMouseClick()
 					ATile* ClickedTile = Cast<ATile>(ClickedActor);
 					FVector2D TargetGridPos = ClickedTile->GetGridPosition();
 
+					// FIX per Blueprint Bug
 					int32 ActualRange = SelectedUnit->MovementRange;
 					if (ActualRange <= 0)
 					{
@@ -110,7 +113,7 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						return;
 					}
 
-					// PREVIENE MOVIMENTI MULTIPLI (La variabile definita nell'Header!)
+					// PREVIENE MOVIMENTI MULTIPLI
 					if (UnitThatMovedThisTurn == SelectedUnit)
 					{
 						UE_LOG(LogTemp, Warning, TEXT("[Movimento] Mossa Bloccata: Questa unita' si e' gia' mossa in questo turno!"));
@@ -145,11 +148,10 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						NewLocation.Z += 60.f;
 						SelectedUnit->SetActorLocation(NewLocation, false, nullptr, ETeleportType::TeleportPhysics);
 
-						// 3. Aggiorna logica e traccia il movimento
+						// 3. Aggiorna logica
 						SelectedUnit->CurrentGridPosition = TargetGridPos;
 						UnitThatMovedThisTurn = SelectedUnit; // Registriamo che si è mossa!
 
-						// NON impostiamo bHasActedThisTurn = true qui, perché l'utente potrebbe voler attaccare dopo essersi mosso!
 						ClickedTile->SetTileStatus(SelectedUnit->PlayerOwner, ETileStatus::OCCUPIED);
 
 						// 4. Ripulisci grafica
@@ -158,7 +160,7 @@ void ATTT_PlayerController::OnLeftMouseClick()
 
 						UE_LOG(LogTemp, Warning, TEXT("[Movimento] SPOSTAMENTO SUCCESSO su Cella (%.0f, %.0f)!"), TargetGridPos.X, TargetGridPos.Y);
 
-						// 5. RIAPRIAMO IL MENU per permettere all'utente di Attaccare o Finire il turno
+						// 5. RIAPRIAMO IL MENU
 						if (ActionWidgetInstance)
 						{
 							ActionWidgetInstance->UpdateUI(SelectedUnit);
@@ -187,24 +189,37 @@ void ATTT_PlayerController::OnLeftMouseClick()
 			{
 				ABaseUnit* TargetUnit = Cast<ABaseUnit>(ClickedActor);
 
-				if (TargetUnit && TargetUnit->PlayerOwner != SelectedUnit->PlayerOwner) // domanda: se e' nemico oppure no
+				if (TargetUnit && TargetUnit->PlayerOwner != SelectedUnit->PlayerOwner) // È un nemico?
 				{
-					// Calcola distanza (Manhattan Distance per griglie a croce)
+					// --- REQUISITO ELEVAZIONE ---
+					// Si può attaccare solo se il nemico è allo stesso livello o inferiore
+					float MyZ = SelectedUnit->GetActorLocation().Z;
+					float TargetZ = TargetUnit->GetActorLocation().Z;
+
+					// Aggiungiamo un margine di tolleranza di 10.f per evitare problemi di collisioni imperfette
+					if (TargetZ > MyZ + 10.f)
+					{
+						UE_LOG(LogTemp, Error, TEXT("[Combattimento] ATTACCO FALLITO! Il bersaglio e' troppo in alto (Z Nemico: %.1f > Mia Z: %.1f)"), TargetZ, MyZ);
+						GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("Attacco Fallito: Il bersaglio e' in una posizione sopraelevata!"));
+						GameMode->ClearTileHighlights();
+						CurrentActionState = EPlayerActionState::Idle;
+						return; // Blocchiamo l'attacco
+					}
+
+					// Calcola Distanza di Manhattan
 					int32 DistX = FMath::Abs(FMath::RoundToInt(SelectedUnit->CurrentGridPosition.X) - FMath::RoundToInt(TargetUnit->CurrentGridPosition.X));
 					int32 DistY = FMath::Abs(FMath::RoundToInt(SelectedUnit->CurrentGridPosition.Y) - FMath::RoundToInt(TargetUnit->CurrentGridPosition.Y));
 					int32 Distance = DistX + DistY;
 
-					// Recupera il range d'attacco corretto
 					int32 ActualAttackRange = SelectedUnit->AttackRange > 0 ? SelectedUnit->AttackRange : (SelectedUnit->GetClass()->GetName().Contains(TEXT("Sniper")) ? 10 : 1);
 
 					if (Distance <= ActualAttackRange)
 					{
 						UE_LOG(LogTemp, Warning, TEXT("[Combattimento] BERSAGLIO COLPITO! Distanza: %d. Range: %d"), Distance, ActualAttackRange);
 
-						// Salviamo la posizione in caso il bersaglio venga distrutto
 						FVector2D TargetGridPos = TargetUnit->CurrentGridPosition;
 
-						// 1. DANNO AL BERSAGLIO (usiamo le funzioni del tuo BaseUnit)
+						// 1. DANNO AL BERSAGLIO
 						int32 Dmg = SelectedUnit->CalculateDamage();
 						TargetUnit->TakeDamageAmount(Dmg);
 
@@ -215,7 +230,6 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						{
 							UE_LOG(LogTemp, Error, TEXT("[Combattimento] NEMICO DISTRUTTO!"));
 
-							// Libera la cella
 							for (ATile* Tile : GameMode->GField->TileArray)
 							{
 								if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(TargetGridPos.X) &&
@@ -228,41 +242,48 @@ void ATTT_PlayerController::OnLeftMouseClick()
 
 							GameMode->Player1Units.Remove(TargetUnit);
 							GameMode->Player0Units.Remove(TargetUnit);
-							//La distruzione dell'Actor la gestisce già il tuo metodo Die() in BaseUnit.cpp
 						}
 						else
 						{
-							// 3. IL CONTRATTACCO (Regola d'oro del Prof. Cicala)
-							int32 TargetAttackRange = TargetUnit->AttackRange > 0 ? TargetUnit->AttackRange : (TargetUnit->GetClass()->GetName().Contains(TEXT("Sniper")) ? 10 : 1);
+							// 3. IL CONTRATTACCO ONLY SNIPER
+							// Controlliamo le classi dei due lottatori
+							bool bIsAttackerSniper = SelectedUnit->GetClass()->GetName().Contains(TEXT("Sniper"));
+							bool bIsTargetSniper = TargetUnit->GetClass()->GetName().Contains(TEXT("Sniper"));
+							bool bIsTargetBrawler = TargetUnit->GetClass()->GetName().Contains(TEXT("Brawler"));
 
-							if (Distance <= TargetAttackRange)
+							//Innesca SOLO se l'attaccante è uno Sniper
+							if (bIsAttackerSniper)
 							{
-								UE_LOG(LogTemp, Warning, TEXT("[Combattimento] CONTRATTACCO INNESCATO! Il nemico risponde al fuoco!"));
-								int32 CounterDmg = TargetUnit->CalculateDamage();
-
-								// Salviamo la posizione in caso moriamo noi
-								FVector2D MyGridPos = SelectedUnit->CurrentGridPosition;
-								SelectedUnit->TakeDamageAmount(CounterDmg);
-
-								UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Hai subito %d danni. Salute rimasta: %d"), CounterDmg, SelectedUnit->HealthPoints);
-
-								// Se noi moriamo per il contrattacco
-								if (SelectedUnit->HealthPoints <= 0)
+								// per Sniper or un Brawler a distanza 1
+								if (bIsTargetSniper || (bIsTargetBrawler && Distance == 1))
 								{
-									UE_LOG(LogTemp, Error, TEXT("[Combattimento] LA TUA UNITA' E' MORTA PER IL CONTRATTACCO!"));
+									UE_LOG(LogTemp, Warning, TEXT("[Combattimento] REGOLE CICALA: CONTRATTACCO INNESCATO SULLO SNIPER!"));
 
-									for (ATile* Tile : GameMode->GField->TileArray)
+									// Danno fisso randomico tra 1 e 3
+									int32 CounterDmg = FMath::RandRange(1, 3);
+
+									FVector2D MyGridPos = SelectedUnit->CurrentGridPosition;
+									SelectedUnit->TakeDamageAmount(CounterDmg);
+
+									UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Il tuo Sniper subisce %d danni da contrattacco. Salute rimasta: %d"), CounterDmg, SelectedUnit->HealthPoints);
+
+									if (SelectedUnit->HealthPoints <= 0)
 									{
-										if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(MyGridPos.X) &&
-											FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(MyGridPos.Y))
+										UE_LOG(LogTemp, Error, TEXT("[Combattimento] LA TUA UNITA' E' MORTA PER IL CONTRATTACCO!"));
+
+										for (ATile* Tile : GameMode->GField->TileArray)
 										{
-											Tile->SetTileStatus(-1, ETileStatus::EMPTY);
-											break;
+											if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(MyGridPos.X) &&
+												FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(MyGridPos.Y))
+											{
+												Tile->SetTileStatus(-1, ETileStatus::EMPTY);
+												break;
+											}
 										}
+										GameMode->Player0Units.Remove(SelectedUnit);
+										GameMode->Player1Units.Remove(SelectedUnit);
+										SelectedUnit = nullptr;
 									}
-									GameMode->Player0Units.Remove(SelectedUnit);
-									GameMode->Player1Units.Remove(SelectedUnit);
-									SelectedUnit = nullptr;
 								}
 							}
 						}
@@ -270,11 +291,10 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						// Pulizia e Fine Turno Automatico dopo aver attaccato
 						GameMode->ClearTileHighlights();
 						CurrentActionState = EPlayerActionState::Idle;
-						UnitThatMovedThisTurn = nullptr; // Reset del movimento per il prossimo turno
-						if (SelectedUnit) SelectedUnit->bHasActedThisTurn = true; // Fine dell'azione per questa pedina
+						UnitThatMovedThisTurn = nullptr;
+						if (SelectedUnit) SelectedUnit->bHasActedThisTurn = true;
 						if (ActionWidgetInstance) ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
 
-						// Se hai attaccato, il turno dell'unità finisce. Passiamo al nemico.
 						GameMode->TurnNextPlayer();
 					}
 					else
@@ -288,7 +308,7 @@ void ATTT_PlayerController::OnLeftMouseClick()
 				else
 				{
 					// Cliccato a vuoto o su se stesso
-					UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Attacco Annullato (Cliccato a vuoto)."));
+					UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Attacco Annullato."));
 					GameMode->ClearTileHighlights();
 					CurrentActionState = EPlayerActionState::Idle;
 				}
@@ -300,7 +320,6 @@ void ATTT_PlayerController::OnLeftMouseClick()
 			ABaseUnit* ClickedUnit = Cast<ABaseUnit>(ClickedActor);
 			if (ClickedUnit)
 			{
-				// Puoi selezionare solo se è il tuo turno e l'unità ti appartiene e non ha già agito in modo definitivo
 				if (ClickedUnit->PlayerOwner == 0 && !ClickedUnit->bHasActedThisTurn)
 				{
 					SelectedUnit = ClickedUnit;
