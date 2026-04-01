@@ -4,14 +4,13 @@
 #include "Kismet/GameplayStatics.h"
 #include "BaseSign.h"
 #include "TTT_GameMode.h"
-#include "Math/UnrealMathUtility.h" // Necessario per la funzione FMath::PerlinNoise2D
-#include "Misc/DateTime.h"          // Necessario per il vero random basato sul tempo
-#include "Math/RandomStream.h"      //Gestione corretta e indipendente del Seed
+#include "Math/UnrealMathUtility.h" 
+#include "Misc/DateTime.h"         
+#include "Math/RandomStream.h"      
 
 // Sets default values
 AGameField::AGameField()
 {
-	// Set this actor to call Tick() every frame.
 	PrimaryActorTick.bCanEverTick = false;
 
 	// Scala per avere macchie ampie e naturali.
@@ -23,7 +22,6 @@ void AGameField::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 
-	// Utilizza il GridData esistente per impostare la Size (Requisito: 25x25)
 	if (GridData)
 	{
 		Size = GridData->GridSize;
@@ -40,23 +38,17 @@ void AGameField::OnConstruction(const FTransform& Transform)
 	NextCellPositionMultiplier = (TileSize + TileSize * CellPadding) / TileSize;
 }
 
-// Called when the game starts or when spawned
 void AGameField::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// FIX SEED BUG: In Unreal PIE, il random globale può dare la stessa sequenza.
-	// Usiamo i Ticks del tempo reale di sistema per un vero Random!
 	RandomSeed = FDateTime::Now().GetTicks() % 9999999;
 
 	UE_LOG(LogTemp, Warning, TEXT("-----> INIZIO GENERAZIONE MAPPA 25x25 <-----"));
 	UE_LOG(LogTemp, Warning, TEXT("Seed Casuale Generato dal Tempo: %d"), RandomSeed);
 	UE_LOG(LogTemp, Warning, TEXT("----------------------------------------------"));
 
-	// 1. Genera la Mappa Procedurale
 	GenerateField();
-
-	// 2. Piazzamento delle 3 Torri (Obiettivi) prima delle unità
 	SpawnTowers();
 }
 
@@ -66,7 +58,16 @@ void AGameField::ResetField()
 	{
 		for (ATile* Obj : TileArray)
 		{
-			Obj->SetTileStatus(NOT_ASSIGNED, ETileStatus::EMPTY);
+			// PROTEZIONE ACQUA E TORRI: 
+			//se è acqua OR una torre, resta occupata in modo permanente
+			if (Obj->ElevationLevel == 0 || Obj->Tags.Contains(FName("TowerTile")))
+			{
+				Obj->SetTileStatus(NOT_ASSIGNED, ETileStatus::OCCUPIED);
+			}
+			else
+			{
+				Obj->SetTileStatus(NOT_ASSIGNED, ETileStatus::EMPTY);
+			}
 		}
 
 		OnResetEvent.Broadcast();
@@ -76,30 +77,25 @@ void AGameField::ResetField()
 		{
 			GameMode->IsGameOver = false;
 			GameMode->MoveCounter = 0;
+			GameMode->PerformCoinFlip();
 		}
 	}
 }
 
 void AGameField::GenerateField()
 {
-	// FRandomStream garantisce che tutti i random (float e int) siano forzatamente derivati dal nostro Seed
 	FRandomStream RandomStream(RandomSeed);
 
-	int32 TotalCells = Size * Size; // 625 per una mappa 25x25
+	int32 TotalCells = Size * Size;
 
-	// QUOTE ESATTE (Garantiscono colori bilanciati ad ogni partita come richiesto)
-	int32 CountBlue = FMath::RoundToInt(TotalCells * 0.18f);   // ~18% Livello 0 (Acqua)
-	int32 CountRed = FMath::RoundToInt(TotalCells * 0.12f);    // ~12% Livello 4 (Rosso)
-	int32 CountGreen = FMath::RoundToInt(TotalCells * 0.25f);  // ~25% Livello 1 (Verde)
-	int32 CountYellow = FMath::RoundToInt(TotalCells * 0.25f); // ~25% Livello 2 (Giallo)
-	// Il restante ~20% sarà Livello 3 (Arancio)
-
-	UE_LOG(LogTemp, Log, TEXT("Target Celle calcolato: Acqua:%d, Pianura:%d, Montagna Bassa:%d, Vetta:%d"), CountBlue, CountGreen, CountYellow, CountRed);
+	int32 CountBlue = FMath::RoundToInt(TotalCells * 0.18f);
+	int32 CountRed = FMath::RoundToInt(TotalCells * 0.12f);
+	int32 CountGreen = FMath::RoundToInt(TotalCells * 0.25f);
+	int32 CountYellow = FMath::RoundToInt(TotalCells * 0.25f);
 
 	TArray<int32> FinalElevations;
 	FinalElevations.Init(0, TotalCells);
 
-	// Utilizziamo il RandomStream per ottenere offset in virgola mobile sempre nuovi ad ogni avvio!
 	float OffsetX = RandomStream.FRandRange(-50000.0f, 50000.0f);
 	float OffsetY = RandomStream.FRandRange(-50000.0f, 50000.0f);
 
@@ -108,7 +104,6 @@ void AGameField::GenerateField()
 	TArray<float> RawNoises;
 	RawNoises.Init(0.0f, TotalCells);
 
-	// Calcolo del Perlin Noise per ogni cella
 	for (int32 IndexX = 0; IndexX < Size; IndexX++) {
 		for (int32 IndexY = 0; IndexY < Size; IndexY++) {
 			float SampleX = (IndexX * NoiseScale) + OffsetX;
@@ -121,12 +116,10 @@ void AGameField::GenerateField()
 		}
 	}
 
-	// Ordiniamo le celle per valore (da valle a picco)
 	NoiseCells.Sort([](const FNoiseCell& A, const FNoiseCell& B) {
 		return A.NoiseVal < B.NoiseVal;
 		});
 
-	// Mappatura Esatta dei Colori (Garantisce le percentuali desiderate)
 	for (int32 i = 0; i < TotalCells; i++) {
 		int32 Level = 0;
 		if (i < CountBlue) Level = 0;
@@ -138,13 +131,11 @@ void AGameField::GenerateField()
 		FinalElevations[NoiseCells[i].Index] = Level;
 	}
 
-	// ALGORITMO DI RIPARAZIONE ISOLE (Garantisce 1 singolo continente)
 	TArray<int32> ComponentLabels;
 	ComponentLabels.Init(-1, TotalCells);
 	TMap<int32, int32> ComponentSizes;
 	int32 CurrentLabel = 0;
 
-	// 1. Identifica tutti i continenti (masse di terra collegate) usando il Flood Fill
 	for (int32 i = 0; i < TotalCells; i++) {
 		if (FinalElevations[i] > 0 && ComponentLabels[i] == -1) {
 			int32 CompSize = 0;
@@ -180,7 +171,6 @@ void AGameField::GenerateField()
 		}
 	}
 
-	// 2. Trova il continente principale (quello con più celle)
 	int32 MainComponentLabel = -1;
 	int32 MaxSize = 0;
 	for (auto& Pair : ComponentSizes) {
@@ -190,7 +180,6 @@ void AGameField::GenerateField()
 		}
 	}
 
-	// 3. Affonda le isole minori (le fa diventare acqua)
 	int32 IsolatedLandCount = 0;
 	for (int32 i = 0; i < TotalCells; i++) {
 		if (FinalElevations[i] > 0 && ComponentLabels[i] != MainComponentLabel) {
@@ -199,15 +188,11 @@ void AGameField::GenerateField()
 		}
 	}
 
-	// 4. Per mantenere le percentuali perfette, trasforma l'acqua costiera in pianura
 	if (IsolatedLandCount > 0) {
-		UE_LOG(LogTemp, Warning, TEXT("Trovate %d celle isolate. Avvio riparazione mappa (creazione ponti naturali)..."), IsolatedLandCount);
-
 		for (int32 k = 0; k < IsolatedLandCount; k++) {
 			int32 BestWaterIndex = -1;
 			float BestNoise = -MAX_FLT;
 
-			// Cerca la cella d'acqua migliore adiacente al continente
 			for (int32 i = 0; i < TotalCells; i++) {
 				if (FinalElevations[i] == 0) {
 					int32 CX = i % Size;
@@ -222,7 +207,6 @@ void AGameField::GenerateField()
 						int32 NY = CY + OffsetsY[n];
 						if (NX >= 0 && NX < Size && NY >= 0 && NY < Size) {
 							int32 NIndex = NY * Size + NX;
-							// Deve toccare la terra
 							if (FinalElevations[NIndex] > 0) {
 								bAdjacentToLand = true;
 								break;
@@ -231,7 +215,6 @@ void AGameField::GenerateField()
 					}
 
 					if (bAdjacentToLand) {
-						// Preferiamo l'acqua meno profonda (Noise più alto)
 						if (RawNoises[i] > BestNoise) {
 							BestNoise = RawNoises[i];
 							BestWaterIndex = i;
@@ -241,18 +224,13 @@ void AGameField::GenerateField()
 			}
 
 			if (BestWaterIndex != -1) {
-				FinalElevations[BestWaterIndex] = 1; // Nuova terra (Pianura verde)
-				RawNoises[BestWaterIndex] = -MAX_FLT; // Evita di pescare la stessa cella se ci sono più isole da coprire
+				FinalElevations[BestWaterIndex] = 1;
+				RawNoises[BestWaterIndex] = -MAX_FLT;
 			}
 		}
-		UE_LOG(LogTemp, Warning, TEXT("Riparazione completata con successo! Mappa validata."));
-	}
-	else {
-		UE_LOG(LogTemp, Warning, TEXT("Mappa perfetta! Nessuna isola isolata generata."));
 	}
 
 	// SPAWN FISICO DEI TILE
-
 	for (int32 IndexX = 0; IndexX < Size; IndexX++)
 	{
 		for (int32 IndexY = 0; IndexY < Size; IndexY++)
@@ -271,70 +249,51 @@ void AGameField::GenerateField()
 				Obj->SetActorScale3D(FVector(TileScale, TileScale, Zscaling));
 
 				Obj->SetGridPosition(IndexX, IndexY);
+
+				//BLUEPRINT DEI COLORI
 				Obj->SetElevationLevel(ElevationLevel);
+
+				// L'acqua (Livello 0) nasce direttamente come ostacolo invalicabile
+				if (ElevationLevel == 0)
+				{
+					Obj->SetTileStatus(NOT_ASSIGNED, ETileStatus::OCCUPIED);
+				}
+				else
+				{
+					Obj->SetTileStatus(NOT_ASSIGNED, ETileStatus::EMPTY);
+				}
 
 				TileArray.Add(Obj);
 				TileMap.Add(FVector2D(IndexX, IndexY), Obj);
 			}
 		}
 	}
-
-	UE_LOG(LogTemp, Warning, TEXT("======================================="));
-	UE_LOG(LogTemp, Warning, TEXT("=== RESOCONTO FINALE MAPPA GENERATA ==="));
-	UE_LOG(LogTemp, Warning, TEXT("Celle Acqua (Livello 0 - Blu)     : %d"), CountBlue);
-	UE_LOG(LogTemp, Warning, TEXT("Celle Pianura (Livello 1 - Verde) : %d"), CountGreen);
-	UE_LOG(LogTemp, Warning, TEXT("Celle Colline (Livello 2 - Giallo): %d"), CountYellow);
-	UE_LOG(LogTemp, Warning, TEXT("Celle Montagne (Livello 3 - Aran.): %d"), (TotalCells - CountBlue - CountGreen - CountYellow - CountRed));
-	UE_LOG(LogTemp, Warning, TEXT("Celle Vette (Livello 4 - Rosso)   : %d"), CountRed);
-	UE_LOG(LogTemp, Warning, TEXT("======================================="));
 }
 
 void AGameField::SpawnTowers()
 {
-	// Coordinate ideali modificate per mantenere la perfetta simmetria.
-	// Se il centro è (12,12), e la sinistra è (5, 12), la destra per essere equidistante
-	// deve essere 12 + (12 - 5) = 19 sull'asse X. 
 	TArray<FVector2D> IdealTowerPositions = {
-		FVector2D(12, 12), // Torre CC
-		FVector2D(5, 12),  // Torre SX
-		FVector2D(19, 12)  // Torre DX
+		FVector2D(12, 12),
+		FVector2D(5, 12),
+		FVector2D(19, 12)
 	};
 
 	for (int32 i = 0; i < IdealTowerPositions.Num(); i++)
 	{
 		FVector2D TargetPos = IdealTowerPositions[i];
-
-		// Implementazione Algoritmo di Piazzamento Simmetrico Adattivo
 		ATile* BestTile = GetNearestValidTileForTower(TargetPos);
 
 		if (BestTile)
 		{
-			// 1. Rende la cella NON CALPESTABILE marcandola come occupata (Ostacolo)
 			BestTile->SetTileStatus(NOT_ASSIGNED, ETileStatus::OCCUPIED);
 
-			// 2. Spawn effettivo del Blueprint della Torre
 			if (TowerClass != nullptr)
 			{
 				FVector SpawnLocation = BestTile->GetActorLocation();
-				// Aggiungiamo un po' di quota Z per appoggiarla sopra il blocco. 
-				// Regola questo valore (es. 50.0f) in base all'origine della tua mesh.
 				SpawnLocation.Z += 50.0f;
-
 				GetWorld()->SpawnActor<AActor>(TowerClass, SpawnLocation, FRotator::ZeroRotator);
-
-				UE_LOG(LogTemp, Warning, TEXT("Torre %d spawnata via Blueprint in X:%f Y:%f"), i + 1, BestTile->GetGridPosition().X, BestTile->GetGridPosition().Y);
 			}
-			else
-			{
-				FVector CurrentScale = BestTile->GetActorScale3D();
-				BestTile->SetActorScale3D(FVector(CurrentScale.X, CurrentScale.Y, CurrentScale.Z + 3.0f));
-
-				UE_LOG(LogTemp, Warning, TEXT("ATTENZIONE: Nessun BP_Tower assegnato! Torre %d simulata con trucco visivo in X:%f Y:%f"), i + 1, BestTile->GetGridPosition().X, BestTile->GetGridPosition().Y);
-			}
-		}
-		else
-		{
-			UE_LOG(LogTemp, Error, TEXT("Impossibile piazzare la Torre %d!"), i + 1);
+			BestTile->Tags.Add(FName("TowerTile"));
 		}
 	}
 }
@@ -346,14 +305,10 @@ ATile* AGameField::GetNearestValidTileForTower(FVector2D TargetPos)
 
 	for (ATile* Tile : TileArray)
 	{
-		// REQUISITI:
-		// - Deve essere Terra, non Acqua (ElevationLevel > 0)
-		// - Deve essere vuota, per evitare che due torri spawnino nello stesso Tile
+		// Cerca la zona di terra (Elevation > 0)
 		if (Tile->ElevationLevel > 0 && Tile->GetTileStatus() == ETileStatus::EMPTY)
 		{
 			float Dist = FVector2D::Distance(TargetPos, Tile->GetGridPosition());
-
-			// Troviamo il punto più vicino all'ideale
 			if (Dist < MinDist)
 			{
 				MinDist = Dist;
@@ -366,10 +321,7 @@ ATile* AGameField::GetNearestValidTileForTower(FVector2D TargetPos)
 
 FVector2D AGameField::GetPosition(const FHitResult& Hit)
 {
-	if (ATile* Tile = Cast<ATile>(Hit.GetActor()))
-	{
-		return Tile->GetGridPosition();
-	}
+	if (ATile* Tile = Cast<ATile>(Hit.GetActor())) return Tile->GetGridPosition();
 	return FVector2D(-1, -1);
 }
 

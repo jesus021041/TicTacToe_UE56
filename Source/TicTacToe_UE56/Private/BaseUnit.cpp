@@ -1,19 +1,16 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "BaseUnit.h"
-#include "Math/UnrealMathUtility.h" // Necessario per le funzioni matematiche come il Random
+#include "Math/UnrealMathUtility.h" 
 
 // Sets default values
 ABaseUnit::ABaseUnit()
 {
-	// Set this actor to call Tick() every frame.  You can turn this off to improve performance if you don't need it.
 	PrimaryActorTick.bCanEverTick = true;
 
-	// Creazione del componente visivo (Mesh) e impostazione come radice (Root) dell'Actor
 	UnitMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("UnitMesh"));
 	SetRootComponent(UnitMesh);
 
-	// Valori di default "sicuri" (questi verranno poi sovrascritti dalle classi figlie Sniper e Brawler)
 	MovementRange = 0;
 	AttackType = EAttackType::Melee;
 	AttackRange = 0;
@@ -30,7 +27,6 @@ void ABaseUnit::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Memorizziamo la vita massima all'inizio della partita per poterla usare nella UI (widget)
 	MaxHealthPoints = HealthPoints;
 }
 
@@ -40,7 +36,29 @@ void ABaseUnit::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 }
 
-//LOGICA DELL'UNITA'
+// LOGICA DELL'UNITA'
+
+bool ABaseUnit::CanAttackTarget(ABaseUnit* TargetUnit) const
+{
+	if (!TargetUnit) return false;
+
+	// Preleviamo l'altezza Z (assoluta nel mondo) di attaccante e bersaglio
+	float MyZ = this->GetActorLocation().Z;
+	float TargetZ = TargetUnit->GetActorLocation().Z;
+
+	UE_LOG(LogTemp, Warning, TEXT("[Combat Check] La mia altezza: %f, Altezza Bersaglio: %f"), MyZ, TargetZ);
+
+	//Margine di errore (10.0f)
+	//Se il bersaglio è più in alto di noi, neghiamo l'attacco.
+	if (TargetZ > MyZ + 10.0f)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[Combat Check] BERSAGLIO TROPPO IN ALTO! Attacco negato per regola Cicala."));
+		return false;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[Combat Check] Elevazione valida. L'attacco puo' proseguire."));
+	return true; // Se e' allo stesso livello o piu' in basso, l'attacco e' valido!
+}
 
 int32 ABaseUnit::CalculateDamage() const
 {
@@ -49,10 +67,8 @@ int32 ABaseUnit::CalculateDamage() const
 
 void ABaseUnit::TakeDamageAmount(int32 DamageAmount)
 {
-	// Sottraiamo il danno ai punti vita attuali
 	HealthPoints -= DamageAmount;
 
-	// Evitiamo che la vita vada sotto lo zero
 	if (HealthPoints <= 0)
 	{
 		HealthPoints = 0;
@@ -62,6 +78,5 @@ void ABaseUnit::TakeDamageAmount(int32 DamageAmount)
 
 void ABaseUnit::Die()
 {
-	
 	Destroy();
 }

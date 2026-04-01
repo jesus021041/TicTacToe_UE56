@@ -18,15 +18,15 @@ UCLASS(Abstract)
 class TICTACTOE_UE56_API ABaseUnit : public AActor
 {
 	GENERATED_BODY()
-	
-public:	
+
+public:
 	ABaseUnit();
 
 	// Componente visivo (Mesh)
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UStaticMeshComponent* UnitMesh;
 
-	// === STATISTICHE UNITÀ (Modificabili dai Blueprint figli) ===
+	//STATISTICHE UNITÀ (Modificabili dai Blueprint figli)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
 	int32 MaxHealthPoints;
 
@@ -48,9 +48,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
 	EAttackType AttackType;
 
-	//GESTIONE GIOCO:
-	
-	// 0 per Umano && 1 per IA
+	//Game
+	// 0 per Umano, 1 per IA
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game")
 	int32 PlayerOwner;
 
@@ -62,7 +61,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game")
 	bool bHasActedThisTurn = false;
 
-	//METODI DI COMBATTIMENTO
+	//Mod DI COMBATTIMENTO
+	UFUNCTION(BlueprintCallable, Category = "Combat")
+	bool CanAttackTarget(ABaseUnit* TargetUnit) const;
+
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	int32 CalculateDamage() const;
 
