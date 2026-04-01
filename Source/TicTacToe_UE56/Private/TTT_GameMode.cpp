@@ -66,8 +66,21 @@ void ATTT_GameMode::PerformCoinFlip()
 
 	StartingPlayer = FMath::RandRange(0, 1);
 	CurrentPlayer = StartingPlayer;
-	CurrentGameState = EGameState::Placement;
-	Players[CurrentPlayer]->OnTurn();
+
+	//LANCIO MONETA
+	CurrentGameState = EGameState::CoinFlip;
+
+	FString CoinMessage = FString::Printf(TEXT("LANCIO DELLA MONETA...\nInizia il Giocatore %d!"), CurrentPlayer + 1);
+	GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Black, CoinMessage, true, FVector2D(1.0f, 1.0f));
+	UE_LOG(LogTemp, Warning, TEXT("[Setup] %s"), *CoinMessage);
+
+	//attesa 2 secondi x lettura
+	FTimerHandle CoinFlipTimer;
+	GetWorld()->GetTimerManager().SetTimer(CoinFlipTimer, [this]() {
+		CurrentGameState = EGameState::Placement;
+		GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, TEXT("FASE DI PIAZZAMENTO: Schiera le tue unita'!"), true, FVector2D(1.0f, 1.0f));
+		if (Players.IsValidIndex(CurrentPlayer)) Players[CurrentPlayer]->OnTurn();
+		}, 2.0f, false);
 }
 
 void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPosition)
@@ -84,7 +97,6 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 
 		if (!UnitToSpawn || !GField)
 		{
-			Players[CurrentPlayer]->OnTurn();
 			return;
 		}
 
@@ -99,22 +111,37 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 			}
 		}
 
-		// =========================================================================
-		// FIX ACQUA ELEGANTE: Controlliamo la variabile ElevationLevel
-		// Il livello 0 è l'acqua. Non calpestabile!
-		// =========================================================================
+		//l'acqua non calpestabile!
 		if (TargetTile && TargetTile->ElevationLevel == 0)
 		{
-			if (CurrentPlayer == 0) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Errore: L'Acqua non e' calpestabile!"));
-			Players[CurrentPlayer]->OnTurn();
-			return; // BLOCCA IL PIAZZAMENTO
+			if (CurrentPlayer == 0)
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Errore: L'Acqua non e' calpestabile!"));
+			}
+			else
+			{
+				FTimerHandle RetryTimer;
+				GetWorld()->GetTimerManager().SetTimer(RetryTimer, [this]() {
+					if (Players.IsValidIndex(CurrentPlayer)) Players[CurrentPlayer]->OnTurn();
+					}, 0.1f, false);
+			}
+			return;
 		}
 
 		// Controllo ostacoli fisici (Altre unità o Torri)
 		if (!TargetTile || TargetTile->GetTileStatus() != ETileStatus::EMPTY)
 		{
-			if (CurrentPlayer == 0) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Errore: Cella occupata da una Torre o Unita'!"));
-			Players[CurrentPlayer]->OnTurn();
+			if (CurrentPlayer == 0)
+			{
+				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Errore: Cella occupata da una Torre o Unita'!"));
+			}
+			else
+			{
+				FTimerHandle RetryTimer;
+				GetWorld()->GetTimerManager().SetTimer(RetryTimer, [this]() {
+					if (Players.IsValidIndex(CurrentPlayer)) Players[CurrentPlayer]->OnTurn();
+					}, 0.1f, false);
+			}
 			return;
 		}
 
@@ -122,12 +149,14 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 		if (CurrentPlayer == 0 && GridPos.Y > 2)
 		{
 			GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Errore: Devi piazzare nelle tue prime 3 righe in basso!"));
-			Players[CurrentPlayer]->OnTurn();
 			return;
 		}
 		if (CurrentPlayer == 1 && GridPos.Y < FieldSize - 3)
 		{
-			Players[CurrentPlayer]->OnTurn();
+			FTimerHandle RetryTimer;
+			GetWorld()->GetTimerManager().SetTimer(RetryTimer, [this]() {
+				if (Players.IsValidIndex(CurrentPlayer)) Players[CurrentPlayer]->OnTurn();
+				}, 0.1f, false);
 			return;
 		}
 
