@@ -79,8 +79,49 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 
 	if (CurrentGameState == EGameState::Placement)
 	{
+		int32& UnitsPlaced = (CurrentPlayer == 0) ? Player0UnitsPlaced : Player1UnitsPlaced;
+		TSubclassOf<ABaseUnit> UnitToSpawn = (UnitsPlaced == 0) ? SniperClass : BrawlerClass;
+
+		if (!UnitToSpawn || !GField)
+		{
+			Players[CurrentPlayer]->OnTurn();
+			return;
+		}
+
+		ATile* TargetTile = nullptr;
+
+		for (ATile* Tile : GField->TileArray)
+		{
+			if (Tile && FMath::IsNearlyEqual(Tile->GetGridPosition().X, GridPos.X) && FMath::IsNearlyEqual(Tile->GetGridPosition().Y, GridPos.Y))
+			{
+				TargetTile = Tile;
+				break;
+			}
+		}
+
+		// =========================================================================
+		// FIX ACQUA ELEGANTE: Controlliamo la variabile ElevationLevel
+		// Il livello 0 è l'acqua. Non calpestabile!
+		// =========================================================================
+		if (TargetTile && TargetTile->ElevationLevel == 0)
+		{
+			if (CurrentPlayer == 0) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Errore: L'Acqua non e' calpestabile!"));
+			Players[CurrentPlayer]->OnTurn();
+			return; // BLOCCA IL PIAZZAMENTO
+		}
+
+		// Controllo ostacoli fisici (Altre unità o Torri)
+		if (!TargetTile || TargetTile->GetTileStatus() != ETileStatus::EMPTY)
+		{
+			if (CurrentPlayer == 0) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Errore: Cella occupata da una Torre o Unita'!"));
+			Players[CurrentPlayer]->OnTurn();
+			return;
+		}
+
+		// Controllo validità aree di schieramento
 		if (CurrentPlayer == 0 && GridPos.Y > 2)
 		{
+			GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Errore: Devi piazzare nelle tue prime 3 righe in basso!"));
 			Players[CurrentPlayer]->OnTurn();
 			return;
 		}
@@ -90,39 +131,22 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 			return;
 		}
 
-		int32& UnitsPlaced = (CurrentPlayer == 0) ? Player0UnitsPlaced : Player1UnitsPlaced;
-		TSubclassOf<ABaseUnit> UnitToSpawn = (UnitsPlaced == 0) ? SniperClass : BrawlerClass;
+		FVector Location = TargetTile->GetActorLocation();
+		Location.Z += 60.0f; // Alziamo leggermente l'unità rispetto al terreno
 
-		if (UnitToSpawn && GField)
+		ABaseUnit* NewUnit = GetWorld()->SpawnActor<ABaseUnit>(UnitToSpawn, Location, FRotator::ZeroRotator);
+		if (NewUnit)
 		{
-			ATile* TargetTile = nullptr;
-			for (ATile* Tile : GField->TileArray)
-			{
-				if (Tile && FMath::IsNearlyEqual(Tile->GetGridPosition().X, GridPos.X) && FMath::IsNearlyEqual(Tile->GetGridPosition().Y, GridPos.Y))
-				{
-					TargetTile = Tile;
-					break;
-				}
-			}
+			NewUnit->PlayerOwner = CurrentPlayer;
+			NewUnit->CurrentGridPosition = GridPos;
 
-			if (TargetTile && TargetTile->GetTileStatus() == ETileStatus::EMPTY)
-			{
-				FVector Location = TargetTile->GetActorLocation();
-				Location.Z += 60.0f;
+			if (CurrentPlayer == 0) Player0Units.Add(NewUnit);
+			else Player1Units.Add(NewUnit);
 
-				ABaseUnit* NewUnit = GetWorld()->SpawnActor<ABaseUnit>(UnitToSpawn, Location, FRotator::ZeroRotator);
-				if (NewUnit)
-				{
-					NewUnit->PlayerOwner = CurrentPlayer;
-					NewUnit->CurrentGridPosition = GridPos;
+			TargetTile->SetTileStatus(CurrentPlayer, ETileStatus::OCCUPIED);
+			UnitsPlaced++;
 
-					if (CurrentPlayer == 0) Player0Units.Add(NewUnit);
-					else Player1Units.Add(NewUnit);
-
-					TargetTile->SetTileStatus(CurrentPlayer, ETileStatus::OCCUPIED);
-					UnitsPlaced++;
-				}
-			}
+			UE_LOG(LogTemp, Warning, TEXT("[Piazzamento] Giocatore %d ha piazzato un'unita' in (%.0f, %.0f)"), CurrentPlayer, GridPos.X, GridPos.Y);
 		}
 
 		if (Player0UnitsPlaced == 2 && Player1UnitsPlaced == 2)
@@ -139,6 +163,7 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 			Players[CurrentPlayer]->OnTurn();
 			return;
 		}
+
 		TurnNextPlayer();
 	}
 	else if (CurrentGameState == EGameState::Playing)
@@ -167,8 +192,6 @@ void ATTT_GameMode::TurnNextPlayer()
 	Players[CurrentPlayer]->OnTurn();
 }
 
-// LOGICA DI MOVIMENTO
-
 void ATTT_GameMode::ClearTileHighlights()
 {
 	if (!GField) return;
@@ -196,31 +219,20 @@ TArray<FVector2D> ATTT_GameMode::GetReachableCells(FVector2D StartGridPos, int32
 	TArray<FVector2D> ReachableCells;
 	if (!GField) return ReachableCells;
 
-	UE_LOG(LogTemp, Warning, TEXT("[Pathfinding] --- INIZIO RICERCA ---"));
-	UE_LOG(LogTemp, Warning, TEXT("[Pathfinding] Partenza: (%.0f, %.0f), Raggio: %d"), StartGridPos.X, StartGridPos.Y, MovementRange);
-
 	auto GetTileSafely = [&](FVector2D Pos) -> ATile* {
 		int32 TargetX = FMath::RoundToInt(Pos.X);
 		int32 TargetY = FMath::RoundToInt(Pos.Y);
 
 		for (ATile* T : GField->TileArray) {
-			if (T) {
-				int32 TileX = FMath::RoundToInt(T->GetGridPosition().X);
-				int32 TileY = FMath::RoundToInt(T->GetGridPosition().Y);
-				if (TileX == TargetX && TileY == TargetY) {
-					return T;
-				}
+			if (T && FMath::RoundToInt(T->GetGridPosition().X) == TargetX && FMath::RoundToInt(T->GetGridPosition().Y) == TargetY) {
+				return T;
 			}
 		}
 		return nullptr;
 		};
 
 	ATile* StartTile = GetTileSafely(StartGridPos);
-	if (!StartTile)
-	{
-		UE_LOG(LogTemp, Error, TEXT("[Pathfinding] ERRORE: La cella di partenza non esiste!"));
-		return ReachableCells;
-	}
+	if (!StartTile) return ReachableCells;
 
 	TArray<TPair<FVector2D, int32>> Frontier;
 	TArray<FVector2D> Visited;
@@ -232,13 +244,8 @@ TArray<FVector2D> ATTT_GameMode::GetReachableCells(FVector2D StartGridPos, int32
 
 	FVector2D Directions[4] = { FVector2D(0, 1), FVector2D(0, -1), FVector2D(1, 0), FVector2D(-1, 0) };
 
-	int32 Iterations = 0;
-
 	while (Frontier.Num() > 0)
 	{
-		Iterations++;
-		if (Iterations > 2000) break; // Salvavita anti loop-infinito
-
 		FVector2D CurrentPos = Frontier[0].Key;
 		int32 CurrentCost = Frontier[0].Value;
 		Frontier.RemoveAt(0);
@@ -246,37 +253,30 @@ TArray<FVector2D> ATTT_GameMode::GetReachableCells(FVector2D StartGridPos, int32
 		ATile* CurrentTile = GetTileSafely(CurrentPos);
 		if (!CurrentTile) continue;
 
-		float CurrentElevation = CurrentTile->GetActorLocation().Z;
-
-		// Esploriamo i 4 vicini
 		for (int i = 0; i < 4; ++i)
 		{
 			FVector2D NextPos = CurrentPos + Directions[i];
 
-			// 1. Controllo Limiti Mappa
 			if (NextPos.X < 0 || NextPos.X >= FieldSize || NextPos.Y < 0 || NextPos.Y >= FieldSize) continue;
 
 			ATile* NextTile = GetTileSafely(NextPos);
 			if (!NextTile) continue;
 
-			// 2. Controllo Ostacoli (Acqua, Torri e Unità sono tutte state settate come OCCUPIED)
+			// 1. L'acqua è invalicabile (ElevationLevel == 0)
+			if (NextTile->ElevationLevel == 0) continue;
+
+			// 2. Torri e Nemici sono Ostacoli
 			bool bIsStartPos = (FMath::RoundToInt(NextPos.X) == FMath::RoundToInt(StartGridPos.X)) &&
 				(FMath::RoundToInt(NextPos.Y) == FMath::RoundToInt(StartGridPos.Y));
 
-			if (NextTile->GetTileStatus() == ETileStatus::OCCUPIED && !bIsStartPos)
-			{
-				continue; // È acqua, una torre o un nemico. La scartiamo in automatico!
-			}
+			if (NextTile->GetTileStatus() != ETileStatus::EMPTY && !bIsStartPos) continue;
 
-			// 3. Calcolo Costo Elevazione (Se la mappa è piatta, costa sempre 1)
-			float NextElevation = NextTile->GetActorLocation().Z;
-			int32 MoveCost = (NextElevation > CurrentElevation + 10.0f) ? 2 : 1;
+			// 3. Movimento in salita costa 2! Movimento in piano o discesa costa 1.
+			int32 MoveCost = (NextTile->ElevationLevel > CurrentTile->ElevationLevel) ? 2 : 1;
 			int32 NewCost = CurrentCost + MoveCost;
 
-			// 4. Controllo se superiamo il raggio d'azione
 			if (NewCost > MovementRange) continue;
 
-			// 5. Aggiornamento percorsi migliori
 			bool bAlreadyVisited = false;
 			for (int32 v = 0; v < Visited.Num(); ++v)
 			{
@@ -307,15 +307,9 @@ TArray<FVector2D> ATTT_GameMode::GetReachableCells(FVector2D StartGridPos, int32
 						bInReachable = true; break;
 					}
 				}
-				if (!bInReachable)
-				{
-					ReachableCells.Add(NextPos);
-					UE_LOG(LogTemp, Warning, TEXT(">>> AGGIUNTA CELLA VALIDA: (%.0f, %.0f) con costo %d"), NextPos.X, NextPos.Y, NewCost);
-				}
+				if (!bInReachable) ReachableCells.Add(NextPos);
 			}
 		}
 	}
-
-	UE_LOG(LogTemp, Warning, TEXT("[Pathfinding] --- FINE RICERCA. Celle Totali Trovate: %d ---"), ReachableCells.Num());
 	return ReachableCells;
 }
