@@ -67,9 +67,7 @@ void ATTT_PlayerController::OnLeftMouseClick()
 		// FASE II: GIOCO
 		else if (GameMode->CurrentGameState == EGameState::Playing)
 		{
-			// ==========================================
 			// CASO A: STIAMO SELEZIONANDO DOVE MUOVERCI
-			// ==========================================
 			if (CurrentActionState == EPlayerActionState::SelectingMove && SelectedUnit)
 			{
 				if (ClickedActor && ClickedActor->IsA(ATile::StaticClass()))
@@ -77,7 +75,6 @@ void ATTT_PlayerController::OnLeftMouseClick()
 					ATile* ClickedTile = Cast<ATile>(ClickedActor);
 					FVector2D TargetGridPos = ClickedTile->GetGridPosition();
 
-					// FIX per Blueprint Bug
 					int32 ActualRange = SelectedUnit->MovementRange;
 					if (ActualRange <= 0)
 					{
@@ -113,8 +110,8 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						return;
 					}
 
-					// PREVIENE MOVIMENTI MULTIPLI
-					if (UnitThatMovedThisTurn == SelectedUnit)
+					FName MovedTag = FName(*FString::Printf(TEXT("MovedInTurn_%d"), GameMode->MoveCounter));
+					if (SelectedUnit->Tags.Contains(MovedTag))
 					{
 						UE_LOG(LogTemp, Warning, TEXT("[Movimento] Mossa Bloccata: Questa unita' si e' gia' mossa in questo turno!"));
 						GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Questa unita' si e' gia' mossa!"));
@@ -143,14 +140,16 @@ void ATTT_PlayerController::OnLeftMouseClick()
 							}
 						}
 
-						// 2. Sposta la pedina FORZANDO il teletrasporto
+						// 2. Sposta la pedina
 						FVector NewLocation = ClickedTile->GetActorLocation();
 						NewLocation.Z += 60.f;
 						SelectedUnit->SetActorLocation(NewLocation, false, nullptr, ETeleportType::TeleportPhysics);
 
 						// 3. Aggiorna logica
 						SelectedUnit->CurrentGridPosition = TargetGridPos;
-						UnitThatMovedThisTurn = SelectedUnit; // Registriamo che si è mossa!
+
+						//only MOSSA, ma nn chiude il turno
+						SelectedUnit->Tags.Add(MovedTag);
 
 						ClickedTile->SetTileStatus(SelectedUnit->PlayerOwner, ETileStatus::OCCUPIED);
 
@@ -160,7 +159,7 @@ void ATTT_PlayerController::OnLeftMouseClick()
 
 						UE_LOG(LogTemp, Warning, TEXT("[Movimento] SPOSTAMENTO SUCCESSO su Cella (%.0f, %.0f)!"), TargetGridPos.X, TargetGridPos.Y);
 
-						// 5. RIAPRIAMO IL MENU
+						// 5. RIAPRIAMO IL MENU PER POTER ATTACCARE
 						if (ActionWidgetInstance)
 						{
 							ActionWidgetInstance->UpdateUI(SelectedUnit);
@@ -172,6 +171,12 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						UE_LOG(LogTemp, Warning, TEXT("[Movimento] Click su cella non valida o irragiungibile."));
 						GameMode->ClearTileHighlights();
 						CurrentActionState = EPlayerActionState::Idle;
+
+						if (ActionWidgetInstance)
+						{
+							ActionWidgetInstance->UpdateUI(SelectedUnit);
+							ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+						}
 					}
 				}
 				else
@@ -179,6 +184,12 @@ void ATTT_PlayerController::OnLeftMouseClick()
 					UE_LOG(LogTemp, Warning, TEXT("[Movimento] Mossa annullata per click fuori dalla griglia."));
 					GameMode->ClearTileHighlights();
 					CurrentActionState = EPlayerActionState::Idle;
+
+					if (ActionWidgetInstance)
+					{
+						ActionWidgetInstance->UpdateUI(SelectedUnit);
+						ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+					}
 				}
 
 				return;
@@ -191,22 +202,49 @@ void ATTT_PlayerController::OnLeftMouseClick()
 
 				if (TargetUnit && TargetUnit->PlayerOwner != SelectedUnit->PlayerOwner) // È un nemico?
 				{
-					// --- REQUISITO ELEVAZIONE ---
-					// Si può attaccare solo se il nemico è allo stesso livello o inferiore
-					float MyZ = SelectedUnit->GetActorLocation().Z;
-					float TargetZ = TargetUnit->GetActorLocation().Z;
+					// Identifichiamo il Tile sotto di noi e il Tile sotto al nemico.
+					ATile* AttackerTile = nullptr;
+					ATile* TargetTile = nullptr;
 
-					// Aggiungiamo un margine di tolleranza di 10.f per evitare problemi di collisioni imperfette
-					if (TargetZ > MyZ + 10.f)
+					for (ATile* Tile : GameMode->GField->TileArray)
 					{
-						UE_LOG(LogTemp, Error, TEXT("[Combattimento] ATTACCO FALLITO! Il bersaglio e' troppo in alto (Z Nemico: %.1f > Mia Z: %.1f)"), TargetZ, MyZ);
-						GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("Attacco Fallito: Il bersaglio e' in una posizione sopraelevata!"));
-						GameMode->ClearTileHighlights();
-						CurrentActionState = EPlayerActionState::Idle;
-						return; // Blocchiamo l'attacco
+						if (!Tile) continue;
+
+						if (FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.X) &&
+							FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.Y))
+						{
+							AttackerTile = Tile;
+						}
+
+						if (FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(TargetUnit->CurrentGridPosition.X) &&
+							FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(TargetUnit->CurrentGridPosition.Y))
+						{
+							TargetTile = Tile;
+						}
 					}
 
-					// Calcola Distanza di Manhattan
+					if (AttackerTile && TargetTile)
+					{
+						//regola;il bersaglio NON PUÒ ESSERE ad un ElevationLevel > del nostro.
+						if (TargetTile->ElevationLevel > AttackerTile->ElevationLevel)
+						{
+							UE_LOG(LogTemp, Error, TEXT("[Combattimento] ATTACCO NEGATO: Il nemico (Livello %d) e' piu' in alto di te (Livello %d)."), TargetTile->ElevationLevel, AttackerTile->ElevationLevel);
+							GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("Attacco Fallito: Il bersaglio e' in una posizione sopraelevata, IRRANGIUNGIBILE!"));
+
+							GameMode->ClearTileHighlights();
+							CurrentActionState = EPlayerActionState::Idle;
+
+							//riattivazione del menu
+							if (ActionWidgetInstance)
+							{
+								ActionWidgetInstance->UpdateUI(SelectedUnit);
+								ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+							}
+							return; // Blocca il colpo immediatamente!
+						}
+					}
+
+					// Calcola Distanza (Range d'attacco come richiesto)
 					int32 DistX = FMath::Abs(FMath::RoundToInt(SelectedUnit->CurrentGridPosition.X) - FMath::RoundToInt(TargetUnit->CurrentGridPosition.X));
 					int32 DistY = FMath::Abs(FMath::RoundToInt(SelectedUnit->CurrentGridPosition.Y) - FMath::RoundToInt(TargetUnit->CurrentGridPosition.Y));
 					int32 Distance = DistX + DistY;
@@ -220,8 +258,8 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						FVector2D TargetGridPos = TargetUnit->CurrentGridPosition;
 
 						// 1. DANNO AL BERSAGLIO
-						int32 Dmg = SelectedUnit->CalculateDamage();
-						TargetUnit->TakeDamageAmount(Dmg);
+						int32 Dmg = FMath::RandRange(SelectedUnit->MinDamage, SelectedUnit->MaxDamage);
+						TargetUnit->HealthPoints -= Dmg;
 
 						UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Il nemico subisce %d danni. Salute rimasta: %d"), Dmg, TargetUnit->HealthPoints);
 
@@ -242,28 +280,24 @@ void ATTT_PlayerController::OnLeftMouseClick()
 
 							GameMode->Player1Units.Remove(TargetUnit);
 							GameMode->Player0Units.Remove(TargetUnit);
+							TargetUnit->Destroy(); // Distruzione sicura
 						}
 						else
 						{
 							// 3. IL CONTRATTACCO ONLY SNIPER
-							// Controlliamo le classi dei due lottatori
 							bool bIsAttackerSniper = SelectedUnit->GetClass()->GetName().Contains(TEXT("Sniper"));
 							bool bIsTargetSniper = TargetUnit->GetClass()->GetName().Contains(TEXT("Sniper"));
 							bool bIsTargetBrawler = TargetUnit->GetClass()->GetName().Contains(TEXT("Brawler"));
 
-							//Innesca SOLO se l'attaccante è uno Sniper
 							if (bIsAttackerSniper)
 							{
-								// per Sniper or un Brawler a distanza 1
 								if (bIsTargetSniper || (bIsTargetBrawler && Distance == 1))
 								{
-									UE_LOG(LogTemp, Warning, TEXT("[Combattimento] REGOLE CICALA: CONTRATTACCO INNESCATO SULLO SNIPER!"));
+									UE_LOG(LogTemp, Warning, TEXT("[Combattimento] REGOLA CICALA: CONTRATTACCO INNESCATO SULLO SNIPER!"));
 
-									// Danno fisso randomico tra 1 e 3
 									int32 CounterDmg = FMath::RandRange(1, 3);
-
 									FVector2D MyGridPos = SelectedUnit->CurrentGridPosition;
-									SelectedUnit->TakeDamageAmount(CounterDmg);
+									SelectedUnit->HealthPoints -= CounterDmg;
 
 									UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Il tuo Sniper subisce %d danni da contrattacco. Salute rimasta: %d"), CounterDmg, SelectedUnit->HealthPoints);
 
@@ -282,17 +316,21 @@ void ATTT_PlayerController::OnLeftMouseClick()
 										}
 										GameMode->Player0Units.Remove(SelectedUnit);
 										GameMode->Player1Units.Remove(SelectedUnit);
+										SelectedUnit->Destroy();
 										SelectedUnit = nullptr;
 									}
 								}
 							}
 						}
 
-						// Pulizia e Fine Turno Automatico dopo aver attaccato
+						//TODO: Fine Turno Automatico dopo aver attaccato, DA modify
 						GameMode->ClearTileHighlights();
 						CurrentActionState = EPlayerActionState::Idle;
-						UnitThatMovedThisTurn = nullptr;
-						if (SelectedUnit) SelectedUnit->bHasActedThisTurn = true;
+
+						if (SelectedUnit)
+						{
+							SelectedUnit->bHasActedThisTurn = true;
+						}
 						if (ActionWidgetInstance) ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
 
 						GameMode->TurnNextPlayer();
@@ -303,6 +341,12 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Bersaglio fuori raggio!"));
 						GameMode->ClearTileHighlights();
 						CurrentActionState = EPlayerActionState::Idle;
+
+						if (ActionWidgetInstance)
+						{
+							ActionWidgetInstance->UpdateUI(SelectedUnit);
+							ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+						}
 					}
 				}
 				else
@@ -311,6 +355,12 @@ void ATTT_PlayerController::OnLeftMouseClick()
 					UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Attacco Annullato."));
 					GameMode->ClearTileHighlights();
 					CurrentActionState = EPlayerActionState::Idle;
+
+					if (ActionWidgetInstance)
+					{
+						ActionWidgetInstance->UpdateUI(SelectedUnit);
+						ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+					}
 				}
 
 				return;
