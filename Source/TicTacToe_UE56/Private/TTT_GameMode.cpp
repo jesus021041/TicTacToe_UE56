@@ -342,3 +342,81 @@ TArray<FVector2D> ATTT_GameMode::GetReachableCells(FVector2D StartGridPos, int32
 	}
 	return ReachableCells;
 }
+
+// ALGORITMO A* PER TROVARE IL PERCORSO min cellXcell
+TArray<FVector2D> ATTT_GameMode::FindPath(FVector2D StartGridPos, FVector2D TargetGridPos)
+{
+	TArray<FVector2D> Path;
+	if (!GField) return Path;
+
+	auto GetTileSafely = [&](FVector2D Pos) -> ATile* {
+		int32 TargetX = FMath::RoundToInt(Pos.X);
+		int32 TargetY = FMath::RoundToInt(Pos.Y);
+		for (ATile* T : GField->TileArray) {
+			if (T && FMath::RoundToInt(T->GetGridPosition().X) == TargetX && FMath::RoundToInt(T->GetGridPosition().Y) == TargetY) {
+				return T;
+			}
+		}
+		return nullptr;
+		};
+
+	TMap<FIntPoint, FIntPoint> CameFrom;
+	TMap<FIntPoint, int32> CostSoFar;
+	TArray<FIntPoint> Frontier;
+
+	FIntPoint StartPoint(FMath::RoundToInt(StartGridPos.X), FMath::RoundToInt(StartGridPos.Y));
+	FIntPoint TargetPoint(FMath::RoundToInt(TargetGridPos.X), FMath::RoundToInt(TargetGridPos.Y));
+
+	Frontier.Add(StartPoint);
+	CostSoFar.Add(StartPoint, 0);
+
+	FIntPoint Directions[4] = { FIntPoint(0, 1), FIntPoint(0, -1), FIntPoint(1, 0), FIntPoint(-1, 0) };
+
+	while (Frontier.Num() > 0)
+	{
+		// Ordina coda per costo minore (Dijkstra basato su Costo)
+		Frontier.Sort([&CostSoFar](const FIntPoint& A, const FIntPoint& B) {
+			return CostSoFar[A] < CostSoFar[B];
+			});
+
+		FIntPoint Current = Frontier[0];
+		Frontier.RemoveAt(0);
+
+		if (Current == TargetPoint) break; //individuaot
+
+		ATile* CurrentTile = GetTileSafely(FVector2D(Current.X, Current.Y));
+		if (!CurrentTile) continue;
+
+		for (int i = 0; i < 4; ++i)
+		{
+			FIntPoint Next = Current + Directions[i];
+			ATile* NextTile = GetTileSafely(FVector2D(Next.X, Next.Y));
+
+			// Vincoli fisici ed altitudine
+			if (!NextTile || NextTile->ElevationLevel == 0) continue;
+			if (NextTile->GetTileStatus() != ETileStatus::EMPTY && Next != TargetPoint) continue;
+
+			int32 MoveCost = (NextTile->ElevationLevel > CurrentTile->ElevationLevel) ? 2 : 1;
+			int32 NewCost = CostSoFar[Current] + MoveCost;
+
+			if (!CostSoFar.Contains(Next) || NewCost < CostSoFar[Next])
+			{
+				CostSoFar.Add(Next, NewCost);
+				CameFrom.Add(Next, Current);
+				Frontier.Add(Next);
+			}
+		}
+	}
+
+	// Ricostruisce il percorso finale a ritroso
+	if (!CameFrom.Contains(TargetPoint)) return Path;
+
+	FIntPoint CurrentPathNode = TargetPoint;
+	while (CurrentPathNode != StartPoint)
+	{
+		Path.Insert(FVector2D(CurrentPathNode.X, CurrentPathNode.Y), 0); // Inserisce in testa per avere l'ordine corretto
+		CurrentPathNode = CameFrom[CurrentPathNode];
+	}
+
+	return Path;
+}

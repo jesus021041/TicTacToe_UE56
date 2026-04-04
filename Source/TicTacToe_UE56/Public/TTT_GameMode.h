@@ -8,7 +8,7 @@
 #include "BaseUnit.h"
 #include "TTT_ConfigData.h" // Aggiunto l'include corretto per la configurazione
 #include "TTT_GameInstance.h"
-#include "TTT_PlayerInterface.h" // FIX: Aggiunto l'include mancante per l'interfaccia!
+#include "TTT_PlayerInterface.h"
 #include "TTT_GameMode.generated.h"
 
 // Enumeratore per gli stati di gioco
@@ -49,9 +49,13 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Units")
 	TArray<ABaseUnit*> Player1Units;
 
-	//LOGICA MOVE
+	// logica di movimento & HIGHLIGHT
 	UFUNCTION(BlueprintCallable, Category = "Movement")
 	TArray<FVector2D> GetReachableCells(FVector2D StartGridPos, int32 MovementRange);
+
+	//Calcolare percorso esatto (to-move)
+	UFUNCTION(BlueprintCallable, Category = "Movement")
+	TArray<FVector2D> FindPath(FVector2D StartGridPos, FVector2D TargetGridPos);
 
 	UFUNCTION(BlueprintCallable, Category = "Movement")
 	void ClearTileHighlights();

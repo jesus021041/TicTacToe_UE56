@@ -45,6 +45,15 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
 	ABaseUnit* UnitThatMovedThisTurn = nullptr;
 
+	//Calcolare percorso esatto (to-move)
+	bool bIsMovingUnit = false;
+	TArray<FVector> PathToFollow;
+	int32 CurrentPathIndex = 0;
+	FVector2D TargetFinalGridPos;
+
+	virtual void Tick(float DeltaTime) override;
+	void FinalizeMovement();
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;

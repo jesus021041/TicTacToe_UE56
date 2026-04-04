@@ -13,6 +13,7 @@ ATTT_PlayerController::ATTT_PlayerController()
 	bShowMouseCursor = true;
 	bEnableClickEvents = true;
 	bEnableMouseOverEvents = true;
+	PrimaryActorTick.bCanEverTick = true; // ESSENZIALE per il movimento fluido
 }
 
 void ATTT_PlayerController::BeginPlay()
@@ -39,8 +40,73 @@ void ATTT_PlayerController::SetupInputComponent()
 	InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &ATTT_PlayerController::OnLeftMouseClick);
 }
 
+// FUNZIONE TICK: per gestire la fluidivilità
+void ATTT_PlayerController::Tick(float DeltaTime)
+{
+	Super::Tick(DeltaTime);
+
+	if (bIsMovingUnit && SelectedUnit && PathToFollow.IsValidIndex(CurrentPathIndex))
+	{
+		FVector CurrentLoc = SelectedUnit->GetActorLocation();
+		FVector TargetLoc = PathToFollow[CurrentPathIndex];
+
+		// Next cella del percorso A*
+		FVector NewLoc = FMath::VInterpConstantTo(CurrentLoc, TargetLoc, DeltaTime, 400.0f);
+		SelectedUnit->SetActorLocation(NewLoc, false, nullptr, ETeleportType::TeleportPhysics);
+
+		// Se siamo arrivati al centro della cella -> next
+		if (FVector::Dist(CurrentLoc, TargetLoc) < 5.0f)
+		{
+			CurrentPathIndex++;
+			if (CurrentPathIndex >= PathToFollow.Num())
+			{
+				FinalizeMovement(); // fine!
+			}
+		}
+	}
+}
+
+// FUNZIONE CHIAMATA ALLA FINE DELL'ANIMAZIONE DI MOVIMENTO
+void ATTT_PlayerController::FinalizeMovement()
+{
+	bIsMovingUnit = false;
+	ATTT_GameMode* GameMode = Cast<ATTT_GameMode>(GetWorld()->GetAuthGameMode());
+	if (!GameMode || !SelectedUnit) return;
+
+	//I. Update Logica e Griglia al traguardo
+	SelectedUnit->CurrentGridPosition = TargetFinalGridPos;
+
+	FName MovedTag = FName(*FString::Printf(TEXT("MovedInTurn_%d"), GameMode->MoveCounter));
+	SelectedUnit->Tags.Add(MovedTag);
+
+	for (ATile* Tile : GameMode->GField->TileArray)
+	{
+		if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(TargetFinalGridPos.X) &&
+			FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(TargetFinalGridPos.Y))
+		{
+			Tile->SetTileStatus(SelectedUnit->PlayerOwner, ETileStatus::OCCUPIED);
+			break;
+		}
+	}
+
+	GameMode->ClearTileHighlights();
+	CurrentActionState = EPlayerActionState::Idle;
+
+	UE_LOG(LogTemp, Warning, TEXT("[Movimento] SPOSTAMENTO COMPLETATO su Cella (%.0f, %.0f)!"), TargetFinalGridPos.X, TargetFinalGridPos.Y);
+
+	//II. Riattiviamo la UI per poter Attaccare o Passare il turno
+	if (ActionWidgetInstance)
+	{
+		ActionWidgetInstance->UpdateUI(SelectedUnit);
+		ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+	}
+}
+
 void ATTT_PlayerController::OnLeftMouseClick()
 {
+	// Blocchiamo i click dell'utente, perche la pedina sta camminando
+	if (bIsMovingUnit) return;
+
 	ATTT_GameMode* GameMode = Cast<ATTT_GameMode>(GetWorld()->GetAuthGameMode());
 	if (!GameMode || GameMode->CurrentPlayer != 0) return;
 
@@ -128,42 +194,46 @@ void ATTT_PlayerController::OnLeftMouseClick()
 
 					if (bIsValidTarget)
 					{
-						// 1. Libera la vecchia cella
-						for (ATile* Tile : GameMode->GField->TileArray)
+						// Calcola il path da percorrere passo dopo passo! (Algoritmo A*)
+						TArray<FVector2D> Path2D = GameMode->FindPath(SelectedUnit->CurrentGridPosition, TargetGridPos);
+
+						if (Path2D.Num() > 0)
 						{
-							if (Tile &&
-								FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.X) &&
-								FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.Y))
+							// Libera subito la cella di partenza per evitare bug fisici con l'algoritmo
+							for (ATile* Tile : GameMode->GField->TileArray)
 							{
-								Tile->SetTileStatus(-1, ETileStatus::EMPTY);
-								break;
+								if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.X) &&
+									FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.Y))
+								{
+									Tile->SetTileStatus(-1, ETileStatus::EMPTY);
+									break;
+								}
 							}
-						}
 
-						// 2. Sposta la pedina
-						FVector NewLocation = ClickedTile->GetActorLocation();
-						NewLocation.Z += 60.f;
-						SelectedUnit->SetActorLocation(NewLocation, false, nullptr, ETeleportType::TeleportPhysics);
+							PathToFollow.Empty();
+							for (FVector2D Node : Path2D)
+							{
+								for (ATile* Tile : GameMode->GField->TileArray)
+								{
+									if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(Node.X) &&
+										FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(Node.Y))
+									{
+										FVector TargetLoc = Tile->GetActorLocation();
+										TargetLoc.Z += 60.f; // Mantiene l'unità sopra la griglia
+										PathToFollow.Add(TargetLoc);
+										break;
+									}
+								}
+							}
 
-						// 3. Aggiorna logica
-						SelectedUnit->CurrentGridPosition = TargetGridPos;
+							// Inizia la sequenza di camminata
+							bIsMovingUnit = true;
+							CurrentPathIndex = 0;
+							TargetFinalGridPos = TargetGridPos;
 
-						//only MOSSA, ma nn chiude il turno
-						SelectedUnit->Tags.Add(MovedTag);
-
-						ClickedTile->SetTileStatus(SelectedUnit->PlayerOwner, ETileStatus::OCCUPIED);
-
-						// 4. Ripulisci grafica
-						GameMode->ClearTileHighlights();
-						CurrentActionState = EPlayerActionState::Idle;
-
-						UE_LOG(LogTemp, Warning, TEXT("[Movimento] SPOSTAMENTO SUCCESSO su Cella (%.0f, %.0f)!"), TargetGridPos.X, TargetGridPos.Y);
-
-						// 5. RIAPRIAMO IL MENU PER POTER ATTACCARE
-						if (ActionWidgetInstance)
-						{
-							ActionWidgetInstance->UpdateUI(SelectedUnit);
-							ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+							GameMode->ClearTileHighlights();
+							CurrentActionState = EPlayerActionState::Idle;
+							if (ActionWidgetInstance) ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
 						}
 					}
 					else
@@ -225,22 +295,22 @@ void ATTT_PlayerController::OnLeftMouseClick()
 
 					if (AttackerTile && TargetTile)
 					{
-						//regola;il bersaglio NON PUÒ ESSERE ad un ElevationLevel > del nostro.
+						//il bersaglio NON PUÒ ESSERE ad un ElevationLevel > del nostro.
 						if (TargetTile->ElevationLevel > AttackerTile->ElevationLevel)
 						{
 							UE_LOG(LogTemp, Error, TEXT("[Combattimento] ATTACCO NEGATO: Il nemico (Livello %d) e' piu' in alto di te (Livello %d)."), TargetTile->ElevationLevel, AttackerTile->ElevationLevel);
-							GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("Attacco Fallito: Il bersaglio e' in una posizione sopraelevata, IRRANGIUNGIBILE!"));
+							GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("Attacco Fallito: Il bersaglio e' in una posizione sopraelevata, IRRAGGIUNGIBILE!"));
 
 							GameMode->ClearTileHighlights();
 							CurrentActionState = EPlayerActionState::Idle;
 
-							//riattivazione del menu
+							// Riattivazione del menu
 							if (ActionWidgetInstance)
 							{
 								ActionWidgetInstance->UpdateUI(SelectedUnit);
 								ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
 							}
-							return; // Blocca il colpo immediatamente!
+							return;
 						}
 					}
 
@@ -323,17 +393,17 @@ void ATTT_PlayerController::OnLeftMouseClick()
 							}
 						}
 
-						//TODO: Fine Turno Automatico dopo aver attaccato, DA modify
 						GameMode->ClearTileHighlights();
 						CurrentActionState = EPlayerActionState::Idle;
 
+						// Segna l'unita' come totalmente consumata (non potra' essere usata finche' non finisci il turno)
 						if (SelectedUnit)
 						{
 							SelectedUnit->bHasActedThisTurn = true;
 						}
+
 						if (ActionWidgetInstance) ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
 
-						GameMode->TurnNextPlayer();
 					}
 					else
 					{
@@ -366,23 +436,38 @@ void ATTT_PlayerController::OnLeftMouseClick()
 				return;
 			}
 
-			// CASO B: SELEZIONE NORMALE UNITA'
+			// CASO B: SELEZIONE NORMALE UNITA' / TOGGLE VISUALIZZAZIONE
 			ABaseUnit* ClickedUnit = Cast<ABaseUnit>(ClickedActor);
 			if (ClickedUnit)
 			{
-				if (ClickedUnit->PlayerOwner == 0 && !ClickedUnit->bHasActedThisTurn)
+				if (ClickedUnit->PlayerOwner == 0) // E' un tuo pezzo
 				{
-					SelectedUnit = ClickedUnit;
-					if (ActionWidgetInstance)
+					if (SelectedUnit == ClickedUnit)
 					{
-						ActionWidgetInstance->UpdateUI(SelectedUnit);
-						ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+						// TOGGLE: Deseleziona se clicchi di nuovo
+						SelectedUnit = nullptr;
+						GameMode->ClearTileHighlights();
+						if (ActionWidgetInstance) ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
+						CurrentActionState = EPlayerActionState::Idle;
+					}
+					else if (!ClickedUnit->bHasActedThisTurn)
+					{
+						// SELEZIONA NUOVA UNITA'
+						SelectedUnit = ClickedUnit;
+						GameMode->ClearTileHighlights();
+						if (ActionWidgetInstance)
+						{
+							ActionWidgetInstance->UpdateUI(SelectedUnit);
+							ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+						}
 					}
 				}
 			}
 			else
 			{
+				// Click nel vuoto: Deseleziona tutto
 				SelectedUnit = nullptr;
+				GameMode->ClearTileHighlights();
 				if (ActionWidgetInstance) ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
 			}
 		}
