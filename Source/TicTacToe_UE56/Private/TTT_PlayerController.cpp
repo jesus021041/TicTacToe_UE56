@@ -13,7 +13,7 @@ ATTT_PlayerController::ATTT_PlayerController()
 	bShowMouseCursor = true;
 	bEnableClickEvents = true;
 	bEnableMouseOverEvents = true;
-	PrimaryActorTick.bCanEverTick = true; // ESSENZIALE per il movimento fluido
+	PrimaryActorTick.bCanEverTick = true;
 }
 
 void ATTT_PlayerController::BeginPlay()
@@ -40,7 +40,7 @@ void ATTT_PlayerController::SetupInputComponent()
 	InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &ATTT_PlayerController::OnLeftMouseClick);
 }
 
-// FUNZIONE TICK: per gestire la fluidivilità
+// FUNZIONE TICK: GESTISCE IL MOVIMENTO FLUIDO DELL'UNITA'
 void ATTT_PlayerController::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
@@ -50,17 +50,15 @@ void ATTT_PlayerController::Tick(float DeltaTime)
 		FVector CurrentLoc = SelectedUnit->GetActorLocation();
 		FVector TargetLoc = PathToFollow[CurrentPathIndex];
 
-		// Next cella del percorso A*
 		FVector NewLoc = FMath::VInterpConstantTo(CurrentLoc, TargetLoc, DeltaTime, 400.0f);
 		SelectedUnit->SetActorLocation(NewLoc, false, nullptr, ETeleportType::TeleportPhysics);
 
-		// Se siamo arrivati al centro della cella -> next
 		if (FVector::Dist(CurrentLoc, TargetLoc) < 5.0f)
 		{
 			CurrentPathIndex++;
 			if (CurrentPathIndex >= PathToFollow.Num())
 			{
-				FinalizeMovement(); // fine!
+				FinalizeMovement();
 			}
 		}
 	}
@@ -73,7 +71,7 @@ void ATTT_PlayerController::FinalizeMovement()
 	ATTT_GameMode* GameMode = Cast<ATTT_GameMode>(GetWorld()->GetAuthGameMode());
 	if (!GameMode || !SelectedUnit) return;
 
-	//I. Update Logica e Griglia al traguardo
+	// 1. Aggiorna Logica e Griglia al traguardo
 	SelectedUnit->CurrentGridPosition = TargetFinalGridPos;
 
 	FName MovedTag = FName(*FString::Printf(TEXT("MovedInTurn_%d"), GameMode->MoveCounter));
@@ -94,7 +92,7 @@ void ATTT_PlayerController::FinalizeMovement()
 
 	UE_LOG(LogTemp, Warning, TEXT("[Movimento] SPOSTAMENTO COMPLETATO su Cella (%.0f, %.0f)!"), TargetFinalGridPos.X, TargetFinalGridPos.Y);
 
-	//II. Riattiviamo la UI per poter Attaccare o Passare il turno
+	// 2. Riattiviamo la UI per poter Attaccare o Passare il turno
 	if (ActionWidgetInstance)
 	{
 		ActionWidgetInstance->UpdateUI(SelectedUnit);
@@ -104,7 +102,7 @@ void ATTT_PlayerController::FinalizeMovement()
 
 void ATTT_PlayerController::OnLeftMouseClick()
 {
-	// Blocchiamo i click dell'utente, perche la pedina sta camminando
+	// Blocchiamo i click dell'utente finché la pedina sta camminando!
 	if (bIsMovingUnit) return;
 
 	ATTT_GameMode* GameMode = Cast<ATTT_GameMode>(GetWorld()->GetAuthGameMode());
@@ -199,7 +197,6 @@ void ATTT_PlayerController::OnLeftMouseClick()
 
 						if (Path2D.Num() > 0)
 						{
-							// Libera subito la cella di partenza per evitare bug fisici con l'algoritmo
 							for (ATile* Tile : GameMode->GField->TileArray)
 							{
 								if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.X) &&
@@ -268,6 +265,23 @@ void ATTT_PlayerController::OnLeftMouseClick()
 			// CASO C: STIAMO SELEZIONANDO CHI ATTACCARE
 			if (CurrentActionState == EPlayerActionState::SelectingAttack && SelectedUnit)
 			{
+				//sicurezza anti doppio Attacco
+				// Anche se riesci ad aprire il menu, l'attacco viene bloccato
+				if (SelectedUnit->bHasActedThisTurn)
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Attacco negato: l'unita' ha gia' attaccato in questo turno."));
+					GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Questa unita' ha gia' attaccato!"));
+					GameMode->ClearTileHighlights();
+					CurrentActionState = EPlayerActionState::Idle;
+
+					if (ActionWidgetInstance)
+					{
+						ActionWidgetInstance->UpdateUI(SelectedUnit);
+						ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+					}
+					return;
+				}
+
 				ABaseUnit* TargetUnit = Cast<ABaseUnit>(ClickedActor);
 
 				if (TargetUnit && TargetUnit->PlayerOwner != SelectedUnit->PlayerOwner) // È un nemico?
@@ -295,22 +309,22 @@ void ATTT_PlayerController::OnLeftMouseClick()
 
 					if (AttackerTile && TargetTile)
 					{
-						//il bersaglio NON PUÒ ESSERE ad un ElevationLevel > del nostro.
+						//regola;il bersaglio NON PUÒ ESSERE ad un liv > del ns.
 						if (TargetTile->ElevationLevel > AttackerTile->ElevationLevel)
 						{
 							UE_LOG(LogTemp, Error, TEXT("[Combattimento] ATTACCO NEGATO: Il nemico (Livello %d) e' piu' in alto di te (Livello %d)."), TargetTile->ElevationLevel, AttackerTile->ElevationLevel);
-							GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("Attacco Fallito: Il bersaglio e' in una posizione sopraelevata, IRRAGGIUNGIBILE!"));
+							GEngine->AddOnScreenDebugMessage(-1, 4.f, FColor::Red, TEXT("Attacco Fallito: Il bersaglio e' in una posizione sopraelevata, IRRANGIUNGIBILE!"));
 
 							GameMode->ClearTileHighlights();
 							CurrentActionState = EPlayerActionState::Idle;
 
-							// Riattivazione del menu
+							//riattivazione del menu
 							if (ActionWidgetInstance)
 							{
 								ActionWidgetInstance->UpdateUI(SelectedUnit);
 								ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
 							}
-							return;
+							return; //blocca il colpo
 						}
 					}
 
@@ -396,12 +410,11 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						GameMode->ClearTileHighlights();
 						CurrentActionState = EPlayerActionState::Idle;
 
-						// Segna l'unita' come totalmente consumata (non potra' essere usata finche' non finisci il turno)
+						//Chiudiamo l'azione e marchiamo l'unità
 						if (SelectedUnit)
 						{
 							SelectedUnit->bHasActedThisTurn = true;
 						}
-
 						if (ActionWidgetInstance) ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
 
 					}
@@ -436,23 +449,23 @@ void ATTT_PlayerController::OnLeftMouseClick()
 				return;
 			}
 
-			// CASO B: SELEZIONE NORMALE UNITA' / TOGGLE VISUALIZZAZIONE
+			// CASO B: SELEZIONE NORMALE UNITA' / TOGGLE
 			ABaseUnit* ClickedUnit = Cast<ABaseUnit>(ClickedActor);
 			if (ClickedUnit)
 			{
-				if (ClickedUnit->PlayerOwner == 0) // E' un tuo pezzo
+				if (ClickedUnit->PlayerOwner == 0)
 				{
 					if (SelectedUnit == ClickedUnit)
 					{
-						// TOGGLE: Deseleziona se clicchi di nuovo
+						//click di nuovo sulla stessa unità la deseleziona
 						SelectedUnit = nullptr;
 						GameMode->ClearTileHighlights();
 						if (ActionWidgetInstance) ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
 						CurrentActionState = EPlayerActionState::Idle;
 					}
-					else if (!ClickedUnit->bHasActedThisTurn)
+					else
 					{
-						// SELEZIONA NUOVA UNITA'
+						//seleziona l'unità (anche se ha già attacato, x poter premere FINE TURNO)
 						SelectedUnit = ClickedUnit;
 						GameMode->ClearTileHighlights();
 						if (ActionWidgetInstance)
