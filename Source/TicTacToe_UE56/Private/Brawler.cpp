@@ -11,4 +11,5 @@ ABrawler::ABrawler()
 	MinDamage = 1;
 	MaxDamage = 6;
 	HealthPoints = 40;
+	MaxHP = 40; // X respawn
 }

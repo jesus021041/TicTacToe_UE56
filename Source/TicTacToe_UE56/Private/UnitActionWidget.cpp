@@ -24,7 +24,7 @@ void UUnitActionWidget::UpdateUI(ABaseUnit* InSelectedUnit)
 
 	if (HPText)
 	{
-		FString HPStr = FString::Printf(TEXT("HP: %d / %d"), CurrentUnit->HealthPoints, CurrentUnit->MaxHealthPoints);
+		FString HPStr = FString::Printf(TEXT("HP: %d / %d"), CurrentUnit->HealthPoints, CurrentUnit->MaxHP);
 		HPText->SetText(FText::FromString(HPStr));
 	}
 

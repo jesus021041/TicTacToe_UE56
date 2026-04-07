@@ -17,7 +17,7 @@ ABaseUnit::ABaseUnit()
 	MinDamage = 0;
 	MaxDamage = 0;
 	HealthPoints = 1;
-	MaxHealthPoints = 1;
+	MaxHP = 1;
 	PlayerOwner = -1;
 	bHasActedThisTurn = false;
 }
@@ -27,7 +27,7 @@ void ABaseUnit::BeginPlay()
 {
 	Super::BeginPlay();
 
-	MaxHealthPoints = HealthPoints;
+	MaxHP = HealthPoints;
 }
 
 // Called every frame

@@ -28,10 +28,14 @@ public:
 
 	//STATISTICHE UNITÀ (Modificabili dai Blueprint figli)
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
-	int32 MaxHealthPoints;
+	int32 HealthPoints;
+
+	//New var per la rinascita
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
+	int32 MaxHP;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Unit Stats")
-	int32 HealthPoints;
+	FVector2D InitialGridPosition;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Unit Stats")
 	int32 MinDamage;
@@ -49,7 +53,7 @@ public:
 	EAttackType AttackType;
 
 	//Game
-	// 0 per Umano, 1 per IA
+ 	// 0 per Umano, 1 per IA
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game")
 	int32 PlayerOwner;
 

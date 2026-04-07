@@ -235,7 +235,7 @@ void ATTT_PlayerController::OnLeftMouseClick()
 					}
 					else
 					{
-						UE_LOG(LogTemp, Warning, TEXT("[Movimento] Click su cella non valida o irragiungibile."));
+						UE_LOG(LogTemp, Warning, TEXT("[Movimento] Click su cella non valida (acqua OR occupata) o irragiungibile."));
 						GameMode->ClearTileHighlights();
 						CurrentActionState = EPlayerActionState::Idle;
 
@@ -266,7 +266,7 @@ void ATTT_PlayerController::OnLeftMouseClick()
 			if (CurrentActionState == EPlayerActionState::SelectingAttack && SelectedUnit)
 			{
 				//sicurezza anti doppio Attacco
-				// Anche se riesci ad aprire il menu, l'attacco viene bloccato
+				// Anche se riesci ad aprire il menu, l'ATT viene bloccato
 				if (SelectedUnit->bHasActedThisTurn)
 				{
 					UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Attacco negato: l'unita' ha gia' attaccato in questo turno."));
@@ -318,7 +318,6 @@ void ATTT_PlayerController::OnLeftMouseClick()
 							GameMode->ClearTileHighlights();
 							CurrentActionState = EPlayerActionState::Idle;
 
-							//riattivazione del menu
 							if (ActionWidgetInstance)
 							{
 								ActionWidgetInstance->UpdateUI(SelectedUnit);
@@ -328,7 +327,6 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						}
 					}
 
-					// Calcola Distanza (Range d'attacco come richiesto)
 					int32 DistX = FMath::Abs(FMath::RoundToInt(SelectedUnit->CurrentGridPosition.X) - FMath::RoundToInt(TargetUnit->CurrentGridPosition.X));
 					int32 DistY = FMath::Abs(FMath::RoundToInt(SelectedUnit->CurrentGridPosition.Y) - FMath::RoundToInt(TargetUnit->CurrentGridPosition.Y));
 					int32 Distance = DistX + DistY;
@@ -347,11 +345,12 @@ void ATTT_PlayerController::OnLeftMouseClick()
 
 						UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Il nemico subisce %d danni. Salute rimasta: %d"), Dmg, TargetUnit->HealthPoints);
 
-						// 2. CONTROLLO MORTE NEMICO
+						// 2. CONTROLLO MORTE NEMICO, X DOPO RINASCERE
 						if (TargetUnit->HealthPoints <= 0)
 						{
-							UE_LOG(LogTemp, Error, TEXT("[Combattimento] NEMICO DISTRUTTO!"));
+							UE_LOG(LogTemp, Error, TEXT("[Combattimento] NEMICO RIDOTTO IN ATOMI!!!! Esecuzione Respawn..."));
 
+							// Svuotiamo la cella in cui ha fatto il suo ciclo
 							for (ATile* Tile : GameMode->GField->TileArray)
 							{
 								if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(TargetGridPos.X) &&
@@ -362,9 +361,23 @@ void ATTT_PlayerController::OnLeftMouseClick()
 								}
 							}
 
-							GameMode->Player1Units.Remove(TargetUnit);
-							GameMode->Player0Units.Remove(TargetUnit);
-							TargetUnit->Destroy(); // Distruzione sicura
+							//rinascita: ripristina statistiche e coordinate d'inizio
+							TargetUnit->HealthPoints = TargetUnit->MaxHP;
+							TargetUnit->CurrentGridPosition = TargetUnit->InitialGridPosition;
+
+							//alla ricerca della cella
+							for (ATile* Tile : GameMode->GField->TileArray)
+							{
+								if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(TargetUnit->InitialGridPosition.X) &&
+									FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(TargetUnit->InitialGridPosition.Y))
+								{
+									FVector SpawnLoc = Tile->GetActorLocation();
+									SpawnLoc.Z += 60.f;
+									TargetUnit->SetActorLocation(SpawnLoc, false, nullptr, ETeleportType::TeleportPhysics);
+									Tile->SetTileStatus(TargetUnit->PlayerOwner, ETileStatus::OCCUPIED);
+									break;
+								}
+							}
 						}
 						else
 						{
@@ -385,9 +398,10 @@ void ATTT_PlayerController::OnLeftMouseClick()
 
 									UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Il tuo Sniper subisce %d danni da contrattacco. Salute rimasta: %d"), CounterDmg, SelectedUnit->HealthPoints);
 
+									//rinascita in caso di morte x contrattaco(sniper)
 									if (SelectedUnit->HealthPoints <= 0)
 									{
-										UE_LOG(LogTemp, Error, TEXT("[Combattimento] LA TUA UNITA' E' MORTA PER IL CONTRATTACCO!"));
+										UE_LOG(LogTemp, Error, TEXT("[Combattimento] LA TUA UNITA' E' MORTA PER IL CONTRATTACCO! Esecuzione Respawn..."));
 
 										for (ATile* Tile : GameMode->GField->TileArray)
 										{
@@ -398,9 +412,23 @@ void ATTT_PlayerController::OnLeftMouseClick()
 												break;
 											}
 										}
-										GameMode->Player0Units.Remove(SelectedUnit);
-										GameMode->Player1Units.Remove(SelectedUnit);
-										SelectedUnit->Destroy();
+
+										SelectedUnit->HealthPoints = SelectedUnit->MaxHP;
+										SelectedUnit->CurrentGridPosition = SelectedUnit->InitialGridPosition;
+
+										for (ATile* Tile : GameMode->GField->TileArray)
+										{
+											if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(SelectedUnit->InitialGridPosition.X) &&
+												FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(SelectedUnit->InitialGridPosition.Y))
+											{
+												FVector SpawnLoc = Tile->GetActorLocation();
+												SpawnLoc.Z += 60.f;
+												SelectedUnit->SetActorLocation(SpawnLoc, false, nullptr, ETeleportType::TeleportPhysics);
+												Tile->SetTileStatus(SelectedUnit->PlayerOwner, ETileStatus::OCCUPIED);
+												break;
+											}
+										}
+
 										SelectedUnit = nullptr;
 									}
 								}
@@ -415,7 +443,16 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						{
 							SelectedUnit->bHasActedThisTurn = true;
 						}
-						if (ActionWidgetInstance) ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
+
+						if (ActionWidgetInstance && SelectedUnit)
+						{
+							ActionWidgetInstance->UpdateUI(SelectedUnit);
+							ActionWidgetInstance->SetVisibility(ESlateVisibility::Visible);
+						}
+						else if (ActionWidgetInstance)
+						{
+							ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
+						}
 
 					}
 					else

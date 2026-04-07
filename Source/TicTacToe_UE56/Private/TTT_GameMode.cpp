@@ -169,6 +169,9 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 			NewUnit->PlayerOwner = CurrentPlayer;
 			NewUnit->CurrentGridPosition = GridPos;
 
+			//Salvataggio della posizione iniziale x il respawn
+			NewUnit->InitialGridPosition = GridPos;
+
 			if (CurrentPlayer == 0) Player0Units.Add(NewUnit);
 			else Player1Units.Add(NewUnit);
 
@@ -414,7 +417,7 @@ TArray<FVector2D> ATTT_GameMode::FindPath(FVector2D StartGridPos, FVector2D Targ
 	FIntPoint CurrentPathNode = TargetPoint;
 	while (CurrentPathNode != StartPoint)
 	{
-		Path.Insert(FVector2D(CurrentPathNode.X, CurrentPathNode.Y), 0); // Inserisce in testa per avere l'ordine corretto
+		Path.Insert(FVector2D(CurrentPathNode.X, CurrentPathNode.Y), 0);
 		CurrentPathNode = CameFrom[CurrentPathNode];
 	}
 

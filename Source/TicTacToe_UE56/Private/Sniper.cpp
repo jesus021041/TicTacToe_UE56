@@ -11,4 +11,5 @@ ASniper::ASniper()
 	MinDamage = 4;
 	MaxDamage = 8;
 	HealthPoints = 20;
+	MaxHP = 20; // X respawn
 }
