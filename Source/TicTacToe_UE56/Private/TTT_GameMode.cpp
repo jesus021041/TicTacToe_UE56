@@ -93,12 +93,21 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 	if (CurrentGameState == EGameState::Placement)
 	{
 		int32& UnitsPlaced = (CurrentPlayer == 0) ? Player0UnitsPlaced : Player1UnitsPlaced;
-		TSubclassOf<ABaseUnit> UnitToSpawn = (UnitsPlaced == 0) ? SniperClass : BrawlerClass;
 
-		if (!UnitToSpawn || !GField)
+		//CLASS PER 4 BLUEPRINT
+		TSubclassOf<ABaseUnit> UnitToSpawn = nullptr;
+		if (CurrentPlayer == 0)
 		{
-			return;
+			//Player -> usa BP_Sniper & BP_Brawler
+			UnitToSpawn = (UnitsPlaced == 0) ? SniperClass : BrawlerClass;
 		}
+		else
+		{
+			// IA -> usa BP_SniperAI e BP_BrawlerAI
+			UnitToSpawn = (UnitsPlaced == 0) ? SniperAIClass : BrawlerAIClass;
+		}
+
+		if (!UnitToSpawn || !GField) return;
 
 		ATile* TargetTile = nullptr;
 
@@ -114,10 +123,7 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 		//l'acqua non calpestabile!
 		if (TargetTile && TargetTile->ElevationLevel == 0)
 		{
-			if (CurrentPlayer == 0)
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Errore: L'Acqua non e' calpestabile!"));
-			}
+			if (CurrentPlayer == 0) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Errore: L'Acqua non e' calpestabile!"));
 			else
 			{
 				FTimerHandle RetryTimer;
@@ -131,10 +137,7 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 		// Controllo ostacoli fisici (Altre unità o Torri)
 		if (!TargetTile || TargetTile->GetTileStatus() != ETileStatus::EMPTY)
 		{
-			if (CurrentPlayer == 0)
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Errore: Cella occupata da una Torre o Unita'!"));
-			}
+			if (CurrentPlayer == 0) GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Red, TEXT("Errore: Cella occupata da una Torre o Unita'!"));
 			else
 			{
 				FTimerHandle RetryTimer;
@@ -161,7 +164,7 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 		}
 
 		FVector Location = TargetTile->GetActorLocation();
-		Location.Z += 60.0f; // Alziamo leggermente l'unità rispetto al terreno
+		Location.Z += 60.0f;
 
 		ABaseUnit* NewUnit = GetWorld()->SpawnActor<ABaseUnit>(UnitToSpawn, Location, FRotator::ZeroRotator);
 		if (NewUnit)
@@ -294,16 +297,14 @@ TArray<FVector2D> ATTT_GameMode::GetReachableCells(FVector2D StartGridPos, int32
 			ATile* NextTile = GetTileSafely(NextPos);
 			if (!NextTile) continue;
 
-			// 1. L'acqua è invalicabile (ElevationLevel == 0)
+			// L'acqua è invalicabile
 			if (NextTile->ElevationLevel == 0) continue;
 
-			// 2. Torri e Nemici sono Ostacoli
 			bool bIsStartPos = (FMath::RoundToInt(NextPos.X) == FMath::RoundToInt(StartGridPos.X)) &&
 				(FMath::RoundToInt(NextPos.Y) == FMath::RoundToInt(StartGridPos.Y));
 
 			if (NextTile->GetTileStatus() != ETileStatus::EMPTY && !bIsStartPos) continue;
 
-			// 3. Movimento in salita costa 2! Movimento in piano o discesa costa 1.
 			int32 MoveCost = (NextTile->ElevationLevel > CurrentTile->ElevationLevel) ? 2 : 1;
 			int32 NewCost = CurrentCost + MoveCost;
 
@@ -377,7 +378,6 @@ TArray<FVector2D> ATTT_GameMode::FindPath(FVector2D StartGridPos, FVector2D Targ
 
 	while (Frontier.Num() > 0)
 	{
-		// Ordina coda per costo minore (Dijkstra basato su Costo)
 		Frontier.Sort([&CostSoFar](const FIntPoint& A, const FIntPoint& B) {
 			return CostSoFar[A] < CostSoFar[B];
 			});
@@ -385,7 +385,7 @@ TArray<FVector2D> ATTT_GameMode::FindPath(FVector2D StartGridPos, FVector2D Targ
 		FIntPoint Current = Frontier[0];
 		Frontier.RemoveAt(0);
 
-		if (Current == TargetPoint) break; //individuaot
+		if (Current == TargetPoint) break;
 
 		ATile* CurrentTile = GetTileSafely(FVector2D(Current.X, Current.Y));
 		if (!CurrentTile) continue;
@@ -395,7 +395,6 @@ TArray<FVector2D> ATTT_GameMode::FindPath(FVector2D StartGridPos, FVector2D Targ
 			FIntPoint Next = Current + Directions[i];
 			ATile* NextTile = GetTileSafely(FVector2D(Next.X, Next.Y));
 
-			// Vincoli fisici ed altitudine
 			if (!NextTile || NextTile->ElevationLevel == 0) continue;
 			if (NextTile->GetTileStatus() != ETileStatus::EMPTY && Next != TargetPoint) continue;
 
@@ -411,7 +410,6 @@ TArray<FVector2D> ATTT_GameMode::FindPath(FVector2D StartGridPos, FVector2D Targ
 		}
 	}
 
-	// Ricostruisce il percorso finale a ritroso
 	if (!CameFrom.Contains(TargetPoint)) return Path;
 
 	FIntPoint CurrentPathNode = TargetPoint;
@@ -422,4 +420,24 @@ TArray<FVector2D> ATTT_GameMode::FindPath(FVector2D StartGridPos, FVector2D Targ
 	}
 
 	return Path;
+}
+
+void ATTT_GameMode::EndGame(int32 WinnerPlayer)
+{
+	IsGameOver = true;
+	CurrentGameState = EGameState::GameOver;
+	ClearTileHighlights();
+
+	FString WinMsg = FString::Printf(TEXT("IL GIOCATORE %d HA VINTO LA PARTITA!"), WinnerPlayer + 1);
+	GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Yellow, WinMsg, true, FVector2D(2.0f, 2.0f));
+	UE_LOG(LogTemp, Error, TEXT("[GAME OVER] %s"), *WinMsg);
+
+	if (GameOverWidgetClass)
+	{
+		GameOverWidgetInstance = CreateWidget<UUserWidget>(GetWorld(), GameOverWidgetClass);
+		if (GameOverWidgetInstance)
+		{
+			GameOverWidgetInstance->AddToViewport(9999);
+		}
+	}
 }

@@ -6,9 +6,10 @@
 #include "GameFramework/GameModeBase.h"
 #include "GameField.h"
 #include "BaseUnit.h"
-#include "TTT_ConfigData.h" // Aggiunto l'include corretto per la configurazione
+#include "TTT_ConfigData.h" 
 #include "TTT_GameInstance.h"
 #include "TTT_PlayerInterface.h"
+#include "Blueprint/UserWidget.h"
 #include "TTT_GameMode.generated.h"
 
 // Enumeratore per gli stati di gioco
@@ -36,11 +37,18 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game")
 	AGameField* GField;
 
+	//4 CLASSI DELLE UNITA' Lato Player && IA
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Game")
 	TSubclassOf<ABaseUnit> SniperClass;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Game")
 	TSubclassOf<ABaseUnit> BrawlerClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Game")
+	TSubclassOf<ABaseUnit> SniperAIClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Game")
+	TSubclassOf<ABaseUnit> BrawlerAIClass;
 
 	// Riferimenti alle unità in campo
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Units")
@@ -83,6 +91,16 @@ public:
 	int32 MoveCounter;
 	bool IsGameOver;
 	FTimerHandle ResetTimerHandle;
+
+	//GESTIONE VITTORIA && GAME OVER
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
+	TSubclassOf<UUserWidget> GameOverWidgetClass;
+
+	UPROPERTY()
+	UUserWidget* GameOverWidgetInstance;
+
+	UFUNCTION(BlueprintCallable, Category = "Game")
+	void EndGame(int32 WinnerPlayer);
 
 	// Funzioni di base
 	virtual void BeginPlay() override;
