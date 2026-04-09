@@ -92,6 +92,24 @@ public:
 	bool IsGameOver;
 	FTimerHandle ResetTimerHandle;
 
+	//GESTIONE TORRI => vari stati
+	// Mappa le posizioni delle torri al loro stato: -1 (Neutrale), 0 (P0), 1 (P1), 2 (Contesa)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Towers")
+	TMap<FVector2D, int32> TowerStates;
+
+	// Timer per la vittoria (devono raggiungere 2 turni consecutivi con 2+ torri)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Towers")
+	int32 Player0WinTimer;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Towers")
+	int32 Player1WinTimer;
+
+	UFUNCTION(BlueprintCallable, Category = "Towers")
+	void EvaluateTowers();
+
+	UFUNCTION(BlueprintCallable, Category = "Towers")
+	void UpdateTowerVisuals();
+
 	//GESTIONE VITTORIA && GAME OVER
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
 	TSubclassOf<UUserWidget> GameOverWidgetClass;

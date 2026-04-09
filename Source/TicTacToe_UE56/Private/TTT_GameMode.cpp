@@ -21,6 +21,11 @@ void ATTT_GameMode::BeginPlay()
 	MoveCounter = 0;
 	Player0UnitsPlaced = 0;
 	Player1UnitsPlaced = 0;
+
+	//timer di vittoria [inizializzo a 0]
+	Player0WinTimer = 0;
+	Player1WinTimer = 0;
+
 	CurrentGameState = EGameState::CoinFlip;
 
 	ATTT_HumanPlayer* HumanPlayer = GetWorld()->GetFirstPlayerController()->GetPawn<ATTT_HumanPlayer>();
@@ -180,8 +185,6 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 
 			TargetTile->SetTileStatus(CurrentPlayer, ETileStatus::OCCUPIED);
 			UnitsPlaced++;
-
-			UE_LOG(LogTemp, Warning, TEXT("[Piazzamento] Giocatore %d ha piazzato un'unita' in (%.0f, %.0f)"), CurrentPlayer, GridPos.X, GridPos.Y);
 		}
 
 		if (Player0UnitsPlaced == 2 && Player1UnitsPlaced == 2)
@@ -189,20 +192,13 @@ void ATTT_GameMode::SetCellSign(const int32 PlayerNumber, const FVector& SpawnPo
 			CurrentGameState = EGameState::Playing;
 
 			ATTT_PlayerController* PC = Cast<ATTT_PlayerController>(GetWorld()->GetFirstPlayerController());
-			if (PC && PC->ActionWidgetInstance)
-			{
-				PC->ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
-			}
+			if (PC && PC->ActionWidgetInstance) PC->ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
 
 			CurrentPlayer = StartingPlayer;
 			Players[CurrentPlayer]->OnTurn();
 			return;
 		}
 
-		TurnNextPlayer();
-	}
-	else if (CurrentGameState == EGameState::Playing)
-	{
 		TurnNextPlayer();
 	}
 }
@@ -216,6 +212,12 @@ int32 ATTT_GameMode::GetNextPlayer(int32 Player)
 
 void ATTT_GameMode::TurnNextPlayer()
 {
+	if (CurrentGameState == EGameState::Playing)
+	{
+		EvaluateTowers();
+		if (IsGameOver) return;
+	}
+
 	MoveCounter += 1;
 	CurrentPlayer = GetNextPlayer(CurrentPlayer);
 
@@ -225,6 +227,135 @@ void ATTT_GameMode::TurnNextPlayer()
 		if (Unit) Unit->bHasActedThisTurn = false;
 	}
 	Players[CurrentPlayer]->OnTurn();
+}
+
+void ATTT_GameMode::EvaluateTowers()
+{
+	if (IsGameOver || !GField) return;
+
+	if (TowerStates.Num() == 0)
+	{
+		for (ATile* Tile : GField->TileArray)
+		{
+			if (Tile && Tile->Tags.Contains(FName("TowerTile")))
+			{
+				TowerStates.Add(Tile->GetGridPosition(), -1);
+			}
+		}
+	}
+
+	for (auto& TowerPair : TowerStates)
+	{
+		FVector2D TowerPos = TowerPair.Key;
+		int32 CurrentState = TowerPair.Value;
+
+		bool bP0InRange = false;
+		bool bP1InRange = false;
+
+		for (ABaseUnit* Unit : Player0Units)
+		{
+			if (Unit && FMath::Max(FMath::Abs(Unit->CurrentGridPosition.X - TowerPos.X), FMath::Abs(Unit->CurrentGridPosition.Y - TowerPos.Y)) <= 2)
+			{
+				bP0InRange = true; break;
+			}
+		}
+
+		for (ABaseUnit* Unit : Player1Units)
+		{
+			if (Unit && FMath::Max(FMath::Abs(Unit->CurrentGridPosition.X - TowerPos.X), FMath::Abs(Unit->CurrentGridPosition.Y - TowerPos.Y)) <= 2)
+			{
+				bP1InRange = true; break;
+			}
+		}
+
+		if (bP0InRange && !bP1InRange)
+		{
+			TowerStates[TowerPos] = 0; // Stato B: P0
+		}
+		else if (bP1InRange && !bP0InRange)
+		{
+			TowerStates[TowerPos] = 1; // Stato B: P1
+		}
+		else if (bP0InRange && bP1InRange)
+		{
+			TowerStates[TowerPos] = 2; // Stato C: Contesa
+		}
+	}
+
+	UpdateTowerVisuals();
+
+	int32 P0Score = 0;
+	int32 P1Score = 0;
+
+	// In stato di Contesa (Value == 2) nessun giocatore guadagna il pt
+	for (auto& TowerPair : TowerStates)
+	{
+		if (TowerPair.Value == 0) P0Score++;
+		else if (TowerPair.Value == 1) P1Score++;
+	}
+
+	UE_LOG(LogTemp, Warning, TEXT("[TORRI] P0: %d | P1: %d"), P0Score, P1Score);
+
+	//fine tuo turno (1), Fine turno IA (2), Fine del tuo prossimo turno (3). = 2 Turni tuoi completi!
+	if (P0Score >= 2) Player0WinTimer++;
+	else Player0WinTimer = 0;
+
+	if (P1Score >= 2) Player1WinTimer++;
+	else Player1WinTimer = 0;
+
+	UE_LOG(LogTemp, Warning, TEXT("[VITTORIA] WinTimer Umano (P0): %d/3 | WinTimer IA (P1): %d/3"), Player0WinTimer, Player1WinTimer);
+
+	// Esecuzione Win
+	if (Player0WinTimer >= 3) EndGame(0);
+	else if (Player1WinTimer >= 3) EndGame(1);
+}
+
+void ATTT_GameMode::UpdateTowerVisuals()
+{
+	if (!GField || !GField->TowerClass) return;
+
+	for (TActorIterator<AActor> It(GetWorld(), GField->TowerClass); It; ++It)
+	{
+		AActor* TowerActor = *It;
+		FVector2D GridPos = GField->GetXYPositionByRelativeLocation(TowerActor->GetActorLocation());
+
+		if (TowerStates.Contains(GridPos))
+		{
+			int32 State = TowerStates[GridPos];
+
+			TArray<UMeshComponent*> Meshes;
+			TowerActor->GetComponents<UMeshComponent>(Meshes);
+			for (UMeshComponent* Mesh : Meshes)
+			{
+				UMaterialInstanceDynamic* MID = Mesh->CreateAndSetMaterialInstanceDynamic(0);
+				if (MID)
+				{
+					FLinearColor C1 = FLinearColor::White; //Neutrale => Bianco
+					FLinearColor C2 = FLinearColor::White;
+					float IsContested = 0.0f; // 0 = Fisso, 1 = Lampeggia (Contesa)
+
+					if (State == 0) // Umano (P0) -> Nero
+					{
+						C1 = FLinearColor::Black;
+					}
+					else if (State == 1) // IA (P1) -> Pink
+					{
+						C1 = FLinearColor(1.0f, 0.4f, 0.7f, 1.0f); // Pink
+					}
+					else if (State == 2) // Contesa -> Lampeggia tra Nero (P0) e Pink (P1)
+					{
+						C1 = FLinearColor::Black;                  // Umano
+						C2 = FLinearColor(1.0f, 0.4f, 0.7f, 1.0f); // IA
+						IsContested = 1.0f;                        // Attiva il mix
+					}
+
+					MID->SetVectorParameterValue(FName("BaseColor"), C1);
+					MID->SetVectorParameterValue(FName("Color2"), C2);
+					MID->SetScalarParameterValue(FName("IsContested"), IsContested);
+				}
+			}
+		}
+	}
 }
 
 void ATTT_GameMode::ClearTileHighlights()
@@ -428,9 +559,11 @@ void ATTT_GameMode::EndGame(int32 WinnerPlayer)
 	CurrentGameState = EGameState::GameOver;
 	ClearTileHighlights();
 
-	FString WinMsg = FString::Printf(TEXT("IL GIOCATORE %d HA VINTO LA PARTITA!"), WinnerPlayer + 1);
-	GEngine->AddOnScreenDebugMessage(-1, 10.f, FColor::Yellow, WinMsg, true, FVector2D(2.0f, 2.0f));
-	UE_LOG(LogTemp, Error, TEXT("[GAME OVER] %s"), *WinMsg);
+	FString WinnerName = (WinnerPlayer == 0) ? TEXT("L'UMANO (P0)") : TEXT("L'IA (P1)");
+	FString WinMsg = FString::Printf(TEXT("[GAME OVER] %s HA CONQUISTATO LE TORRI E VINTO LA PARTITA"), *WinnerName);
+
+	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, WinMsg, true, FVector2D(1.0f, 1.0f));
+	UE_LOG(LogTemp, Error, TEXT("%s"), *WinMsg);
 
 	if (GameOverWidgetClass)
 	{
