@@ -199,6 +199,19 @@ void ATTT_RandomPlayer::OnTurn()
 
 				UE_LOG(LogTemp, Warning, TEXT("[IA] Cerco bersagli da attaccare... Il mio Raggio e': %d"), ActualAttackRange);
 
+				// Troviamo il Tile su cui si trova l'IA per l'elevazione
+				// Rispettaera regola
+				ATile* MyTile = nullptr;
+				for (ATile* Tile : GameMode->GField->TileArray)
+				{
+					if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(UnitToCommand->CurrentGridPosition.X) &&
+						FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(UnitToCommand->CurrentGridPosition.Y))
+					{
+						MyTile = Tile;
+						break;
+					}
+				}
+
 				for (ABaseUnit* Enemy : GameMode->Player0Units)
 				{
 					if (Enemy && Enemy->HealthPoints > 0)
@@ -207,16 +220,28 @@ void ATTT_RandomPlayer::OnTurn()
 						int32 DistY = FMath::Abs(FMath::RoundToInt(UnitToCommand->CurrentGridPosition.Y) - FMath::RoundToInt(Enemy->CurrentGridPosition.Y));
 						int32 Distance = DistX + DistY;
 
-						float MyZ = UnitToCommand->GetActorLocation().Z;
-						float TargetZ = Enemy->GetActorLocation().Z;
-
 						if (Distance > 0 && Distance <= ActualAttackRange)
 						{
-							//check ELEVAZIONE: L'IA non può barare sparando verso l'alto!
-							if (TargetZ > MyZ + 10.0f)
+							// Troviamo il Tile del nemico per leggerne l'elevazione
+							ATile* EnemyTile = nullptr;
+							for (ATile* Tile : GameMode->GField->TileArray)
 							{
-								UE_LOG(LogTemp, Warning, TEXT("[IA] Umano in (%.0f, %.0f) a tiro, ma e' TROPPO IN ALTO. Attacco negato."), Enemy->CurrentGridPosition.X, Enemy->CurrentGridPosition.Y);
-								continue;
+								if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(Enemy->CurrentGridPosition.X) &&
+									FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(Enemy->CurrentGridPosition.Y))
+								{
+									EnemyTile = Tile;
+									break;
+								}
+							}
+
+							// Check elevazione
+							if (MyTile && EnemyTile)
+							{
+								if (EnemyTile->ElevationLevel > MyTile->ElevationLevel)
+								{
+									UE_LOG(LogTemp, Warning, TEXT("[IA] Umano in (%.0f, %.0f) a tiro, ma l'Elevazione lo protegge! (Nemico: Liv %d > IA: Liv %d). Attacco no possibile."), Enemy->CurrentGridPosition.X, Enemy->CurrentGridPosition.Y, EnemyTile->ElevationLevel, MyTile->ElevationLevel);
+									continue;
+								}
 							}
 
 							TargetEnemy = Enemy;
