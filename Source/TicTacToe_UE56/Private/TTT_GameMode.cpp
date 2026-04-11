@@ -271,14 +271,17 @@ void ATTT_GameMode::EvaluateTowers()
 		if (bP0InRange && !bP1InRange)
 		{
 			TowerStates[TowerPos] = 0; // Stato B: P0
+			UE_LOG(LogTemp, Warning, TEXT("[Macchina Stati] Torre in (%.0f, %.0f) controllata da UMANO (P0)."), TowerPos.X, TowerPos.Y);
 		}
 		else if (bP1InRange && !bP0InRange)
 		{
 			TowerStates[TowerPos] = 1; // Stato B: P1
+			UE_LOG(LogTemp, Warning, TEXT("[Macchina Stati] Torre in (%.0f, %.0f) controllata da IA (P1)."), TowerPos.X, TowerPos.Y);
 		}
 		else if (bP0InRange && bP1InRange)
 		{
 			TowerStates[TowerPos] = 2; // Stato C: Contesa
+			UE_LOG(LogTemp, Error, TEXT("[Macchina Stati] Torre in (%.0f, %.0f) in CONTESA! (Unita' multiple in range)."), TowerPos.X, TowerPos.Y);
 		}
 	}
 
@@ -296,7 +299,7 @@ void ATTT_GameMode::EvaluateTowers()
 
 	UE_LOG(LogTemp, Warning, TEXT("[TORRI] P0: %d | P1: %d"), P0Score, P1Score);
 
-	//fine tuo turno (1), Fine turno IA (2), Fine del tuo prossimo turno (3). = 2 Turni tuoi completi!
+	//fine tuo turno (1), Fine turno IA (2), Fine del tuo prossimo turno (3). = 2 Turni tuoi completi
 	if (P0Score >= 2) Player0WinTimer++;
 	else Player0WinTimer = 0;
 
@@ -333,21 +336,27 @@ void ATTT_GameMode::UpdateTowerVisuals()
 					FLinearColor C1 = FLinearColor::White; //Neutrale => Bianco
 					FLinearColor C2 = FLinearColor::White;
 					float IsContested = 0.0f; // 0 = Fisso, 1 = Lampeggia (Contesa)
+					FString ColorLogName = TEXT("BIANCO (Neutrale)");
 
-					if (State == 0) // Umano (P0) -> Nero
+					if (State == 0)
 					{
 						C1 = FLinearColor::Black;
+						ColorLogName = TEXT("NERO (Umano P0)");
 					}
-					else if (State == 1) // IA (P1) -> Pink
+					else if (State == 1)
 					{
-						C1 = FLinearColor(1.0f, 0.4f, 0.7f, 1.0f); // Pink
+						C1 = FLinearColor(1.0f, 0.4f, 0.7f, 1.0f);
+						ColorLogName = TEXT("PINK (IA P1)");
 					}
 					else if (State == 2) // Contesa -> Lampeggia tra Nero (P0) e Pink (P1)
 					{
 						C1 = FLinearColor::Black;                  // Umano
 						C2 = FLinearColor(1.0f, 0.4f, 0.7f, 1.0f); // IA
 						IsContested = 1.0f;                        // Attiva il mix
+						ColorLogName = TEXT("LAMPEGGIANTE NERO/PINK (Contesa)");
 					}
+
+					UE_LOG(LogTemp, Log, TEXT("[Visuals] Rendering Torre (%.0f, %.0f) -> Colore inviato alla GPU: %s"), GridPos.X, GridPos.Y, *ColorLogName);
 
 					MID->SetVectorParameterValue(FName("BaseColor"), C1);
 					MID->SetVectorParameterValue(FName("Color2"), C2);
@@ -428,7 +437,6 @@ TArray<FVector2D> ATTT_GameMode::GetReachableCells(FVector2D StartGridPos, int32
 			ATile* NextTile = GetTileSafely(NextPos);
 			if (!NextTile) continue;
 
-			// L'acqua è invalicabile
 			if (NextTile->ElevationLevel == 0) continue;
 
 			bool bIsStartPos = (FMath::RoundToInt(NextPos.X) == FMath::RoundToInt(StartGridPos.X)) &&
