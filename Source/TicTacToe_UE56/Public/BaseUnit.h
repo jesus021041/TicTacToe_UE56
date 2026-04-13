@@ -53,7 +53,7 @@ public:
 	EAttackType AttackType;
 
 	//Game
- 	// 0 per Umano, 1 per IA
+	// 0 per Umano, 1 per IA
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game")
 	int32 PlayerOwner;
 
@@ -77,6 +77,14 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Combat")
 	void Die();
+
+	//Le var && le funzioni x movimento coretto
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Movement")
+	bool bIsMoving;
+	TArray<FVector> PathQueue;
+
+	UFUNCTION(BlueprintCallable, Category = "Movement")
+	void MoveAlongPath(const TArray<FVector2D>& PathCoords);
 
 protected:
 	virtual void BeginPlay() override;

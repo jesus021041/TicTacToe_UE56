@@ -45,10 +45,11 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
 	ABaseUnit* UnitThatMovedThisTurn = nullptr;
 
-	//Calcolare percorso esatto (to-move)
+	// VARIABILI E FUNZIONI X MOVIMENTO
+	// Blocca l'input dell'utente -> fino alla fine del percorso
 	bool bIsMovingUnit = false;
-	TArray<FVector> PathToFollow;
-	int32 CurrentPathIndex = 0;
+
+	// Memorizza la destinazione per aggiornare la griglia a fine animazione
 	FVector2D TargetFinalGridPos;
 
 	virtual void Tick(float DeltaTime) override;

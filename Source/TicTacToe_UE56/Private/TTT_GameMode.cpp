@@ -53,6 +53,16 @@ void ATTT_GameMode::BeginPlay()
 	auto* AI = GetWorld()->SpawnActor<ITTT_PlayerInterface>(AIClassToSpawn);
 	Players.Add(AI);
 
+	// CREAZIONE DEL WIDGET DELLO STORICO (HUD)
+	if (ActionLogWidgetClass)
+	{
+		ActionLogWidgetInstance = CreateWidget<UActionLogWidget>(GetWorld(), ActionLogWidgetClass);
+		if (ActionLogWidgetInstance)
+		{
+			ActionLogWidgetInstance->AddToViewport();
+		}
+	}
+
 	PerformCoinFlip();
 }
 
@@ -355,9 +365,6 @@ void ATTT_GameMode::UpdateTowerVisuals()
 						IsContested = 1.0f;                        // Attiva il mix
 						ColorLogName = TEXT("LAMPEGGIANTE NERO/PINK (Contesa)");
 					}
-
-					UE_LOG(LogTemp, Log, TEXT("[Visuals] Rendering Torre (%.0f, %.0f) -> Colore inviato alla GPU: %s"), GridPos.X, GridPos.Y, *ColorLogName);
-
 					MID->SetVectorParameterValue(FName("BaseColor"), C1);
 					MID->SetVectorParameterValue(FName("Color2"), C2);
 					MID->SetScalarParameterValue(FName("IsContested"), IsContested);
@@ -573,6 +580,9 @@ void ATTT_GameMode::EndGame(int32 WinnerPlayer)
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Red, WinMsg, true, FVector2D(1.0f, 1.0f));
 	UE_LOG(LogTemp, Error, TEXT("%s"), *WinMsg);
 
+	// Aggiunge la WIN allo storico
+	AddToActionLog(WinMsg, FLinearColor::Yellow);
+
 	if (GameOverWidgetClass)
 	{
 		GameOverWidgetInstance = CreateWidget<UUserWidget>(GetWorld(), GameOverWidgetClass);
@@ -581,4 +591,27 @@ void ATTT_GameMode::EndGame(int32 WinnerPlayer)
 			GameOverWidgetInstance->AddToViewport(9999);
 		}
 	}
+}
+
+//Metodi x HUD -> storico mosse
+void ATTT_GameMode::AddToActionLog(const FString& Message, FLinearColor TextColor)
+{
+	if (ActionLogWidgetInstance)
+	{
+		ActionLogWidgetInstance->AddLogMessage(Message, TextColor);
+	}
+}
+
+FString ATTT_GameMode::GetCellName(FVector2D GridPos)
+{
+	char Letter = 'A' + FMath::RoundToInt(GridPos.X);
+	int32 Number = FMath::RoundToInt(GridPos.Y);
+	return FString::Printf(TEXT("%c%d"), Letter, Number);
+}
+
+FString ATTT_GameMode::GetUnitShortName(ABaseUnit* Unit)
+{
+	if (!Unit) return TEXT("?");
+	if (Unit->GetClass()->GetName().Contains(TEXT("Sniper"))) return TEXT("S");
+	return TEXT("B");
 }

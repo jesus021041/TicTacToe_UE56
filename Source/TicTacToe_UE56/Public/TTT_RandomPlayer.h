@@ -6,6 +6,7 @@
 #include "GameFramework/Pawn.h"
 #include "TTT_PlayerInterface.h"
 #include "TTT_GameInstance.h"
+#include "BaseUnit.h"
 #include "TTT_RandomPlayer.generated.h"
 
 UCLASS()
@@ -34,7 +35,7 @@ public:
 	// Called to bind functionality to input
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
-	// --- Metodi ereditati dall'interfaccia ITTT_PlayerInterface ---
+	//Metodi ereditati dall'interfaccia ITTT_PlayerInterface
 	virtual void OnTurn() override;
 	virtual void OnWin() override;
 	virtual void OnLose() override;
@@ -43,4 +44,10 @@ private:
 	// Timer usato per simulare il tempo di reazione dell'IA
 	FTimerHandle AI_TurnTimerHandle;
 
+	// VARIABILI E FUNZIONI PER IL MOVIMENTO FLUIDO (AGGIUNTE)
+	bool bIsMovingUnit = false;
+
+	UPROPERTY()
+	ABaseUnit* CurrentCommandUnit = nullptr;
+	void ExecuteAIAttack();
 };

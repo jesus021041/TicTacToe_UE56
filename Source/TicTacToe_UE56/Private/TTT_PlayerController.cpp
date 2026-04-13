@@ -40,26 +40,17 @@ void ATTT_PlayerController::SetupInputComponent()
 	InputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &ATTT_PlayerController::OnLeftMouseClick);
 }
 
-// FUNZIONE TICK: GESTISCE IL MOVIMENTO FLUIDO DELL'UNITA'
+// FUNZIONE TICK: ATTENDE LA FINE DELL'ANIMAZIONE DELLA PEDINA
 void ATTT_PlayerController::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
 
-	if (bIsMovingUnit && SelectedUnit && PathToFollow.IsValidIndex(CurrentPathIndex))
+	// Controlla se la pedina ha finito l'animazione di camminata
+	if (bIsMovingUnit && SelectedUnit)
 	{
-		FVector CurrentLoc = SelectedUnit->GetActorLocation();
-		FVector TargetLoc = PathToFollow[CurrentPathIndex];
-
-		FVector NewLoc = FMath::VInterpConstantTo(CurrentLoc, TargetLoc, DeltaTime, 400.0f);
-		SelectedUnit->SetActorLocation(NewLoc, false, nullptr, ETeleportType::TeleportPhysics);
-
-		if (FVector::Dist(CurrentLoc, TargetLoc) < 5.0f)
+		if (!SelectedUnit->bIsMoving) // Questa variabile diventa false quando la pedina arriva a destinazione
 		{
-			CurrentPathIndex++;
-			if (CurrentPathIndex >= PathToFollow.Num())
-			{
-				FinalizeMovement();
-			}
+			FinalizeMovement();
 		}
 	}
 }
@@ -77,12 +68,20 @@ void ATTT_PlayerController::FinalizeMovement()
 	FName MovedTag = FName(*FString::Printf(TEXT("MovedInTurn_%d"), GameMode->MoveCounter));
 	SelectedUnit->Tags.Add(MovedTag);
 
+	bool bTowerConquered = false;
+
 	for (ATile* Tile : GameMode->GField->TileArray)
 	{
 		if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(TargetFinalGridPos.X) &&
 			FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(TargetFinalGridPos.Y))
 		{
 			Tile->SetTileStatus(SelectedUnit->PlayerOwner, ETileStatus::OCCUPIED);
+
+			if (Tile->Tags.Contains(FName("TowerTile")))
+			{
+				bTowerConquered = true;
+			}
+
 			break;
 		}
 	}
@@ -91,6 +90,13 @@ void ATTT_PlayerController::FinalizeMovement()
 	CurrentActionState = EPlayerActionState::Idle;
 
 	UE_LOG(LogTemp, Warning, TEXT("[Movimento] SPOSTAMENTO COMPLETATO su Cella (%.0f, %.0f)!"), TargetFinalGridPos.X, TargetFinalGridPos.Y);
+
+	if (bTowerConquered)
+	{
+		if (ActionWidgetInstance) ActionWidgetInstance->SetVisibility(ESlateVisibility::Hidden);
+		GameMode->EndGame(SelectedUnit->PlayerOwner);
+		return;
+	}
 
 	// 2. Riattiviamo la UI per poter Attaccare o Passare il turno
 	if (ActionWidgetInstance)
@@ -131,7 +137,7 @@ void ATTT_PlayerController::OnLeftMouseClick()
 		// FASE II: GIOCO
 		else if (GameMode->CurrentGameState == EGameState::Playing)
 		{
-			// CASO A: STIAMO SELEZIONANDO DOVE MUOVERCI
+			// CASO A: MOVIMENTO UMANO
 			if (CurrentActionState == EPlayerActionState::SelectingMove && SelectedUnit)
 			{
 				if (ClickedActor && ClickedActor->IsA(ATile::StaticClass()))
@@ -197,6 +203,15 @@ void ATTT_PlayerController::OnLeftMouseClick()
 
 						if (Path2D.Num() > 0)
 						{
+							// REQUISITO 9: ACTION LOG UMANO MOVIMENTO
+							FString UType = GameMode->GetUnitShortName(SelectedUnit);
+							FString StartCell = GameMode->GetCellName(SelectedUnit->CurrentGridPosition);
+							FString EndCell = GameMode->GetCellName(TargetGridPos);
+							FString MoveLog = FString::Printf(TEXT("HP: %s %s -> %s"), *UType, *StartCell, *EndCell);
+
+							UE_LOG(LogTemp, Warning, TEXT("[ActionLog] %s"), *MoveLog);
+							GameMode->AddToActionLog(MoveLog, FLinearColor::White);
+
 							for (ATile* Tile : GameMode->GField->TileArray)
 							{
 								if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.X) &&
@@ -207,26 +222,11 @@ void ATTT_PlayerController::OnLeftMouseClick()
 								}
 							}
 
-							PathToFollow.Empty();
-							for (FVector2D Node : Path2D)
-							{
-								for (ATile* Tile : GameMode->GField->TileArray)
-								{
-									if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(Node.X) &&
-										FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(Node.Y))
-									{
-										FVector TargetLoc = Tile->GetActorLocation();
-										TargetLoc.Z += 60.f; // Mantiene l'unità sopra la griglia
-										PathToFollow.Add(TargetLoc);
-										break;
-									}
-								}
-							}
+							TargetFinalGridPos = TargetGridPos;
 
 							// Inizia la sequenza di camminata
 							bIsMovingUnit = true;
-							CurrentPathIndex = 0;
-							TargetFinalGridPos = TargetGridPos;
+							SelectedUnit->MoveAlongPath(Path2D);
 
 							GameMode->ClearTileHighlights();
 							CurrentActionState = EPlayerActionState::Idle;
@@ -343,6 +343,14 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						int32 Dmg = FMath::RandRange(SelectedUnit->MinDamage, SelectedUnit->MaxDamage);
 						TargetUnit->HealthPoints -= Dmg;
 
+						//ACTION LOG -> UMANO ATT
+						FString UType = GameMode->GetUnitShortName(SelectedUnit);
+						FString TargetCell = GameMode->GetCellName(TargetGridPos);
+						FString AtkLog = FString::Printf(TEXT("HP: %s %s %d"), *UType, *TargetCell, Dmg);
+
+						UE_LOG(LogTemp, Warning, TEXT("[ActionLog] %s"), *AtkLog);
+						GameMode->AddToActionLog(AtkLog, FLinearColor::Red);
+
 						UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Il nemico subisce %d danni. Salute rimasta: %d"), Dmg, TargetUnit->HealthPoints);
 
 						// 2. CONTROLLO MORTE NEMICO, X DOPO RINASCERE
@@ -395,6 +403,10 @@ void ATTT_PlayerController::OnLeftMouseClick()
 									int32 CounterDmg = FMath::RandRange(1, 3);
 									FVector2D MyGridPos = SelectedUnit->CurrentGridPosition;
 									SelectedUnit->HealthPoints -= CounterDmg;
+
+									// ACTION LOG CONTRATTACCO
+									FString CounterLog = FString::Printf(TEXT("AI: %s %s %d (Contrattacco)"), *GameMode->GetUnitShortName(TargetUnit), *GameMode->GetCellName(MyGridPos), CounterDmg);
+									GameMode->AddToActionLog(CounterLog, FLinearColor(1.0f, 0.5f, 0.0f, 1.0f));
 
 									UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Il tuo Sniper subisce %d danni da contrattacco. Salute rimasta: %d"), CounterDmg, SelectedUnit->HealthPoints);
 
@@ -505,6 +517,17 @@ void ATTT_PlayerController::OnLeftMouseClick()
 						//seleziona l'unità (anche se ha già attacato, x poter premere FINE TURNO)
 						SelectedUnit = ClickedUnit;
 						GameMode->ClearTileHighlights();
+
+						for (ATile* Tile : GameMode->GField->TileArray)
+						{
+							if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.X) &&
+								FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(SelectedUnit->CurrentGridPosition.Y))
+							{
+								Tile->SetTileHighlight(true, FLinearColor(1.0f, 1.0f, 0.0f, 1.0f));
+								break;
+							}
+						}
+
 						if (ActionWidgetInstance)
 						{
 							ActionWidgetInstance->UpdateUI(SelectedUnit);

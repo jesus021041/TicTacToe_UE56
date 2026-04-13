@@ -10,6 +10,7 @@
 #include "TTT_GameInstance.h"
 #include "TTT_PlayerInterface.h"
 #include "Blueprint/UserWidget.h"
+#include "ActionLogWidget.h"
 #include "TTT_GameMode.generated.h"
 
 // Enumeratore per gli stati di gioco
@@ -116,6 +117,22 @@ public:
 
 	UPROPERTY()
 	UUserWidget* GameOverWidgetInstance;
+
+	//STORICO DELLE MOSSE -> HUD 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "UI")
+	TSubclassOf<UActionLogWidget> ActionLogWidgetClass;
+
+	UPROPERTY()
+	UActionLogWidget* ActionLogWidgetInstance;
+
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void AddToActionLog(const FString& Message, FLinearColor TextColor = FLinearColor::White);
+
+	UFUNCTION(BlueprintCallable, Category = "Grid")
+	FString GetCellName(FVector2D GridPos);
+
+	UFUNCTION(BlueprintCallable, Category = "Grid")
+	FString GetUnitShortName(ABaseUnit* Unit);
 
 	UFUNCTION(BlueprintCallable, Category = "Game")
 	void EndGame(int32 WinnerPlayer);

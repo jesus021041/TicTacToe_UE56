@@ -2,6 +2,9 @@
 
 #include "BaseUnit.h"
 #include "Math/UnrealMathUtility.h" 
+#include "TTT_GameMode.h"
+#include "GameField.h"
+#include "Tile.h"
 
 // Sets default values
 ABaseUnit::ABaseUnit()
@@ -20,6 +23,7 @@ ABaseUnit::ABaseUnit()
 	MaxHP = 1;
 	PlayerOwner = -1;
 	bHasActedThisTurn = false;
+	bIsMoving = false;
 }
 
 // Called when the game starts or when spawned
@@ -34,6 +38,60 @@ void ABaseUnit::BeginPlay()
 void ABaseUnit::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
+
+	//movimento -> Camminata
+	if (bIsMoving && PathQueue.Num() > 0)
+	{
+		FVector TargetLoc = PathQueue[0];
+		FVector CurrentLoc = GetActorLocation();
+
+		// Se siamo vicini alla destinazione, agganciamoci e passiamo al prossimo punto
+		if (FVector::Dist(CurrentLoc, TargetLoc) < 5.0f)
+		{
+			SetActorLocation(TargetLoc);
+			PathQueue.RemoveAt(0);
+
+			if (PathQueue.Num() == 0)
+			{
+				bIsMoving = false; // Percorso finito
+			}
+		}
+		else
+		{
+			FVector NewLoc = FMath::VInterpConstantTo(CurrentLoc, TargetLoc, DeltaTime, 600.0f);
+			SetActorLocation(NewLoc);
+		}
+	}
+}
+
+// CONVERTE LE COORDINATE LOGICHE IN SPAZIALI
+void ABaseUnit::MoveAlongPath(const TArray<FVector2D>& PathCoords)
+{
+	if (PathCoords.Num() == 0) return;
+
+	PathQueue.Empty();
+	ATTT_GameMode* GameMode = Cast<ATTT_GameMode>(GetWorld()->GetAuthGameMode());
+
+	if (GameMode && GameMode->GField)
+	{
+		for (FVector2D Coord : PathCoords)
+		{
+			for (ATile* Tile : GameMode->GField->TileArray)
+			{
+				if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(Coord.X) &&
+					FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(Coord.Y))
+				{
+					FVector WorldPos = Tile->GetActorLocation();
+					WorldPos.Z += 60.0f;
+					PathQueue.Add(WorldPos);
+					break;
+				}
+			}
+		}
+
+		//ON -> l'animazione nel Tick
+		bIsMoving = true;
+	}
 }
 
 // LOGICA DELL'UNITA'
