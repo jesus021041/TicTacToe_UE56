@@ -269,6 +269,7 @@ void ATTT_RandomPlayer::ExecuteAIAttack()
 	//IV. Logica ATT dell'AI
 	int32 ActualAttackRange = CurrentCommandUnit->AttackRange > 0 ? CurrentCommandUnit->AttackRange : (CurrentCommandUnit->GetClass()->GetName().Contains(TEXT("Sniper")) ? 10 : 1);
 	ABaseUnit* TargetEnemy = nullptr;
+	int32 FinalDistance = 0;
 
 	UE_LOG(LogTemp, Warning, TEXT("[IA] Cerco bersagli da attaccare... Il mio Raggio e': %d"), ActualAttackRange);
 
@@ -318,6 +319,7 @@ void ATTT_RandomPlayer::ExecuteAIAttack()
 				}
 
 				TargetEnemy = Enemy;
+				FinalDistance = Distance;
 				break;
 			}
 			else
@@ -343,7 +345,6 @@ void ATTT_RandomPlayer::ExecuteAIAttack()
 
 		UE_LOG(LogTemp, Warning, TEXT("[ActionLog] %s"), *AtkLog);
 		GameMode->AddToActionLog(AtkLog, FLinearColor::Red);
-
 
 		UE_LOG(LogTemp, Warning, TEXT("[IA] Inflitti %d danni. HP Umano restanti: %d"), Dmg, TargetEnemy->HealthPoints);
 
@@ -379,6 +380,62 @@ void ATTT_RandomPlayer::ExecuteAIAttack()
 				}
 			}
 		}
+		else
+		{
+			//contrattacco lato AI
+			bool bIsAttackerSniper = CurrentCommandUnit->GetClass()->GetName().Contains(TEXT("Sniper"));
+			bool bIsTargetSniper = TargetEnemy->GetClass()->GetName().Contains(TEXT("Sniper"));
+			bool bIsTargetBrawler = TargetEnemy->GetClass()->GetName().Contains(TEXT("Brawler"));
+
+			if (bIsAttackerSniper)
+			{
+				if (bIsTargetSniper || (bIsTargetBrawler && FinalDistance == 1))
+				{
+					UE_LOG(LogTemp, Warning, TEXT("[Combattimento] REGOLA CICALA: CONTRATTACCO S -> LATO IA!"));
+
+					int32 CounterDmg = FMath::RandRange(1, 3);
+					FVector2D MyGridPos = CurrentCommandUnit->CurrentGridPosition;
+					CurrentCommandUnit->HealthPoints -= CounterDmg;
+
+					// ACTION LOG -> CONTRATTACCO
+					FString CounterLog = FString::Printf(TEXT("HP: %s %s %d (Contrattacco)"), *GameMode->GetUnitShortName(TargetEnemy), *GameMode->GetCellName(MyGridPos), CounterDmg);
+					GameMode->AddToActionLog(CounterLog, FLinearColor(1.0f, 0.5f, 0.0f, 1.0f));
+
+					UE_LOG(LogTemp, Warning, TEXT("[Combattimento] Lo Sniper IA subisce %d danni da contrattacco. Salute rimasta: %d"), CounterDmg, CurrentCommandUnit->HealthPoints);
+
+					if (CurrentCommandUnit->HealthPoints <= 0)
+					{
+						UE_LOG(LogTemp, Error, TEXT("[Combattimento] LO SNIPER IA E' MORTO PER IL CONTRATTACCO. Rinascita..."));
+
+						for (ATile* Tile : GameMode->GField->TileArray)
+						{
+							if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(MyGridPos.X) &&
+								FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(MyGridPos.Y))
+							{
+								Tile->SetTileStatus(-1, ETileStatus::EMPTY);
+								break;
+							}
+						}
+
+						CurrentCommandUnit->HealthPoints = CurrentCommandUnit->MaxHP;
+						CurrentCommandUnit->CurrentGridPosition = CurrentCommandUnit->InitialGridPosition;
+
+						for (ATile* Tile : GameMode->GField->TileArray)
+						{
+							if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(CurrentCommandUnit->InitialGridPosition.X) &&
+								FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(CurrentCommandUnit->InitialGridPosition.Y))
+							{
+								FVector SpawnLoc = Tile->GetActorLocation();
+								SpawnLoc.Z += 60.f;
+								CurrentCommandUnit->SetActorLocation(SpawnLoc, false, nullptr, ETeleportType::TeleportPhysics);
+								Tile->SetTileStatus(CurrentCommandUnit->PlayerOwner, ETileStatus::OCCUPIED);
+								break;
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 	else
 	{
@@ -395,10 +452,5 @@ void ATTT_RandomPlayer::ExecuteAIAttack()
 		}, 0.8f, false);
 }
 
-void ATTT_RandomPlayer::OnWin()
-{
-}
-
-void ATTT_RandomPlayer::OnLose()
-{
-}
+void ATTT_RandomPlayer::OnWin() {}
+void ATTT_RandomPlayer::OnLose() {}

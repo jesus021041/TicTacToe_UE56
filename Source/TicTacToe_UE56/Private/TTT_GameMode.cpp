@@ -281,20 +281,20 @@ void ATTT_GameMode::EvaluateTowers()
 		if (bP0InRange && !bP1InRange)
 		{
 			TowerStates[TowerPos] = 0; // Stato B: P0
-			UE_LOG(LogTemp, Warning, TEXT("[Macchina Stati] Torre in (%.0f, %.0f) controllata da UMANO (P0)."), TowerPos.X, TowerPos.Y);
+			//UE_LOG(LogTemp, Warning, TEXT("[Macchina Stati] Torre in (%.0f, %.0f) controllata da UMANO (P0)."), TowerPos.X, TowerPos.Y);
 		}
 		else if (bP1InRange && !bP0InRange)
 		{
 			TowerStates[TowerPos] = 1; // Stato B: P1
-			UE_LOG(LogTemp, Warning, TEXT("[Macchina Stati] Torre in (%.0f, %.0f) controllata da IA (P1)."), TowerPos.X, TowerPos.Y);
+			//UE_LOG(LogTemp, Warning, TEXT("[Macchina Stati] Torre in (%.0f, %.0f) controllata da IA (P1)."), TowerPos.X, TowerPos.Y);
 		}
 		else if (bP0InRange && bP1InRange)
 		{
 			TowerStates[TowerPos] = 2; // Stato C: Contesa
-			UE_LOG(LogTemp, Error, TEXT("[Macchina Stati] Torre in (%.0f, %.0f) in CONTESA! (Unita' multiple in range)."), TowerPos.X, TowerPos.Y);
+			//UE_LOG(LogTemp, Error, TEXT("[Macchina Stati] Torre in (%.0f, %.0f) in CONTESA! (Unita' multiple in range)."), TowerPos.X, TowerPos.Y);
 		}
 	}
-
+	//commentati per provare la miglior versione
 	UpdateTowerVisuals();
 
 	int32 P0Score = 0;
@@ -365,6 +365,10 @@ void ATTT_GameMode::UpdateTowerVisuals()
 						IsContested = 1.0f;                        // Attiva il mix
 						ColorLogName = TEXT("LAMPEGGIANTE NERO/PINK (Contesa)");
 					}
+
+					// Log delle torri (prova)
+					UE_LOG(LogTemp, Warning, TEXT("[Torri] Torre in (%d, %d) -> %s"), FMath::RoundToInt(GridPos.X), FMath::RoundToInt(GridPos.Y), *ColorLogName);
+
 					MID->SetVectorParameterValue(FName("BaseColor"), C1);
 					MID->SetVectorParameterValue(FName("Color2"), C2);
 					MID->SetScalarParameterValue(FName("IsContested"), IsContested);
