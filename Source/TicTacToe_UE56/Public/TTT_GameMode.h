@@ -149,4 +149,11 @@ public:
 	//Aggiorna la UI delle torri
 	UFUNCTION(BlueprintImplementableEvent, Category = "UI")
 	void UpdateTowerScoreUI(int32 P0Score, int32 P1Score);
+
+	//Variabili x change pt 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Score")
+	int32 CurrentP0Score = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Score")
+	int32 CurrentP1Score = 0;
 };

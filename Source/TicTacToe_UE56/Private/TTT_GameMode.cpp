@@ -307,6 +307,10 @@ void ATTT_GameMode::EvaluateTowers()
 		else if (TowerPair.Value == 1) P1Score++;
 	}
 
+	//Salva i pt 
+	CurrentP0Score = P0Score;
+	CurrentP1Score = P1Score;
+
 	UE_LOG(LogTemp, Warning, TEXT("[TORRI] P0: %d | P1: %d"), P0Score, P1Score);
 
 	//Conta torri
