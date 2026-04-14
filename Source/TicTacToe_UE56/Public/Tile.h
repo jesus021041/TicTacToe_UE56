@@ -6,11 +6,11 @@
 #include "GameFramework/Actor.h"
 #include "Tile.generated.h"
 
-UENUM(BlueprintType)
+UENUM()
 enum class ETileStatus : uint8
 {
-	EMPTY UMETA(DisplayName = "Empty"),
-	OCCUPIED UMETA(DisplayName = "Occupied")
+	EMPTY     UMETA(DisplayName = "Empty"),
+	OCCUPIED  UMETA(DisplayName = "Occupied"),
 };
 
 UCLASS()
@@ -28,32 +28,30 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	UStaticMeshComponent* StaticMeshComponent;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile State")
+	//Mesh dedicata per mostrare i colori dell'highlight
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	UStaticMeshComponent* HighlightMesh;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	ETileStatus Status;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile State")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	int32 PlayerOwner;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile State")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	FVector2D TileGridPosition;
 
-	// VARIABILI PER LA MAPPA 25x25
-
-	// Livello di altezza (0=Acqua, 1=Pianura, 2,3,4=Montagne)
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile State")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tile")
 	int32 ElevationLevel;
 
-	// Se true, le unità non possono camminarci sopra (Acqua o Torri)
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile State")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tile")
 	bool bIsObstacle;
 
-	// Array di materiali da impostare nell'editor di Unreal (0=Blu, 1=Verde, ecc.)
-	UPROPERTY(EditDefaultsOnly, Category = "Tile Appearance")
-	TArray<class UMaterialInterface*> ElevationMaterials;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tile")
+	TArray<UMaterialInterface*> ElevationMaterials;
 
-	// Funzione per accendere o spegnere l'evidenziazione (es. verde per movimento, rosso per attacco)
-	UFUNCTION(BlueprintImplementableEvent, Category = "Tile")
-	void SetTileHighlight(bool bIsHighlighted, FLinearColor HighlightColor);
+	//l'highlight e imposta il colore
+	void SetTileHighlight(bool bHighlight, FLinearColor Color);
 
 	void SetTileStatus(const int32 TileOwner, const ETileStatus TileStatus);
 	ETileStatus GetTileStatus();
@@ -62,7 +60,7 @@ public:
 	void SetGridPosition(const double InX, const double InY);
 	FVector2D GetGridPosition();
 
-	// Nuova funzione per impostare l'altezza e applicare il colore
+	UFUNCTION(BlueprintCallable, Category = "Tile")
 	void SetElevationLevel(int32 Level);
 
 protected:

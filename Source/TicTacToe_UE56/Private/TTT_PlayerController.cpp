@@ -528,6 +528,23 @@ void ATTT_PlayerController::OnLeftMouseClick()
 							}
 						}
 
+						//Colore x range
+						int32 ActualRange = SelectedUnit->MovementRange > 0 ? SelectedUnit->MovementRange : (SelectedUnit->GetClass()->GetName().Contains(TEXT("Sniper")) ? 4 : 6);
+						TArray<FVector2D> ValidCells = GameMode->GetReachableCells(SelectedUnit->CurrentGridPosition, ActualRange);
+
+						for (FVector2D CellPos : ValidCells)
+						{
+							for (ATile* Tile : GameMode->GField->TileArray)
+							{
+								if (Tile && FMath::RoundToInt(Tile->GetGridPosition().X) == FMath::RoundToInt(CellPos.X) &&
+									FMath::RoundToInt(Tile->GetGridPosition().Y) == FMath::RoundToInt(CellPos.Y))
+								{
+									Tile->SetTileHighlight(true, FLinearColor(0.0f, 1.0f, 0.0f, 1.0f));
+									break;
+								}
+							}
+						}
+
 						if (ActionWidgetInstance)
 						{
 							ActionWidgetInstance->UpdateUI(SelectedUnit);
