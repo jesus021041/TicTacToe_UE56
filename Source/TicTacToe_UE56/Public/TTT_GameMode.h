@@ -145,4 +145,8 @@ public:
 	void SetCellSign(const int32 PlayerNumber, const FVector& SpawnPosition);
 	int32 GetNextPlayer(int32 Player);
 	void TurnNextPlayer();
+
+	//Aggiorna la UI delle torri
+	UFUNCTION(BlueprintImplementableEvent, Category = "UI")
+	void UpdateTowerScoreUI(int32 P0Score, int32 P1Score);
 };

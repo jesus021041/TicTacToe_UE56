@@ -309,6 +309,9 @@ void ATTT_GameMode::EvaluateTowers()
 
 	UE_LOG(LogTemp, Warning, TEXT("[TORRI] P0: %d | P1: %d"), P0Score, P1Score);
 
+	//Conta torri
+	UpdateTowerScoreUI(P0Score, P1Score);
+
 	//fine tuo turno (1), Fine turno IA (2), Fine del tuo prossimo turno (3). = 2 Turni tuoi completi
 	if (P0Score >= 2) Player0WinTimer++;
 	else Player0WinTimer = 0;
