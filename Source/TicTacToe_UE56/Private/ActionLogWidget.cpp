@@ -22,7 +22,10 @@ void UActionLogWidget::AddLogMessage(const FString& Message, FLinearColor Color)
 		FontInfo.Size = 14;
 		NewLogLine->SetFont(FontInfo);
 
-		// ADD il testo in fondo allo ScrollBox
+		// Fa anndare a capo nei msg
+		NewLogLine->SetAutoWrapText(true);
+
+		// Aggiungiamo il testo in fondo allo ScrollBox
 		LogScrollBox->AddChild(NewLogLine);
 
 		// Scorriamo automaticamente verso il basso per mostrare sempre l'ultima mossa eseguita
