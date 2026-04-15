@@ -83,12 +83,14 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Game State")
 	EGameState CurrentGameState;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "State")
+	int32 CurrentPlayer;
+
 	int32 Player0UnitsPlaced;
 	int32 Player1UnitsPlaced;
 
 	TArray<ITTT_PlayerInterface*> Players;
 	int32 StartingPlayer;
-	int32 CurrentPlayer;
 	int32 MoveCounter;
 	bool IsGameOver;
 	FTimerHandle ResetTimerHandle;

@@ -3,30 +3,39 @@
 #include "ActionLogWidget.h"
 #include "Fonts/SlateFontInfo.h"
 #include "Styling/SlateColor.h"
+#include "Components/ScrollBoxSlot.h"
 
 void UActionLogWidget::AddLogMessage(const FString& Message, FLinearColor Color)
 {
 	// Sicurezza: se il box nn esiste nella UI -> si interrompe
 	if (!LogScrollBox) return;
 
-	// Creiamo dinamicamente una nuova riga di testo passando lo ScrollBox come Parent
+	// Creiamo dinamicamente una nuova riga di testo
 	UTextBlock* NewLogLine = NewObject<UTextBlock>(LogScrollBox);
 	if (NewLogLine)
 	{
-		// Impostiamo il msg e il colore passato come parametro
+		UScrollBoxSlot* NewSlot = Cast<UScrollBoxSlot>(LogScrollBox->AddChild(NewLogLine));
+
+		// stile testuale & colori
 		NewLogLine->SetText(FText::FromString(Message));
+
+		//Applichiamo il colore
 		NewLogLine->SetColorAndOpacity(FSlateColor(Color));
 
-		// Impostiamo una dimensione leggibile per il font => 14
+		// Impostiamo una dimensione leggibile per il font => 16
 		FSlateFontInfo FontInfo = NewLogLine->GetFont();
-		FontInfo.Size = 14;
+		FontInfo.Size = 16;
+		FontInfo.TypefaceFontName = FName("Bold");
 		NewLogLine->SetFont(FontInfo);
 
 		// Fa anndare a capo nei msg
 		NewLogLine->SetAutoWrapText(true);
 
-		// Aggiungiamo il testo in fondo allo ScrollBox
-		LogScrollBox->AddChild(NewLogLine);
+		//Margini
+		if (NewSlot)
+		{
+			NewSlot->SetPadding(FMargin(10.0f, 5.0f, 10.0f, 5.0f));
+		}
 
 		// Scorriamo automaticamente verso il basso per mostrare sempre l'ultima mossa eseguita
 		LogScrollBox->ScrollToEnd();
