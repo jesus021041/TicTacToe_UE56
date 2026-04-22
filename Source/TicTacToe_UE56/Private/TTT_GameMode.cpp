@@ -86,14 +86,16 @@ void ATTT_GameMode::PerformCoinFlip()
 	CurrentGameState = EGameState::CoinFlip;
 
 	FString CoinMessage = FString::Printf(TEXT("LANCIO DELLA MONETA...\nInizia il Giocatore %d!"), CurrentPlayer + 1);
-	GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Black, CoinMessage, true, FVector2D(1.0f, 1.0f));
+	//GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Black, CoinMessage, true, FVector2D(1.0f, 1.0f));
 	UE_LOG(LogTemp, Warning, TEXT("[Setup] %s"), *CoinMessage);
 
 	//attesa 2 secondi x lettura
 	FTimerHandle CoinFlipTimer;
 	GetWorld()->GetTimerManager().SetTimer(CoinFlipTimer, [this]() {
 		CurrentGameState = EGameState::Placement;
-		GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, TEXT("FASE DI PIAZZAMENTO: Schiera le tue unita'!"), true, FVector2D(1.0f, 1.0f));
+		FString Frase_iniziale = TEXT("FASE DI PIAZZAMENTO: Schiera per primo il tuo sniper");
+		ShowTopLeftMessage(Frase_iniziale, FLinearColor::Green, 2.0f);
+		//GEngine->AddOnScreenDebugMessage(-1, 3.f, FColor::Green, TEXT("FASE DI PIAZZAMENTO: Schiera per primo il tuo sniper "), true, FVector2D(1.0f, 1.0f));
 		if (Players.IsValidIndex(CurrentPlayer)) Players[CurrentPlayer]->OnTurn();
 		}, 2.0f, false);
 }
@@ -625,4 +627,16 @@ FString ATTT_GameMode::GetUnitShortName(ABaseUnit* Unit)
 	if (!Unit) return TEXT("?");
 	if (Unit->GetClass()->GetName().Contains(TEXT("Sniper"))) return TEXT("S");
 	return TEXT("B");
+}
+
+//X il msg:
+void ATTT_GameMode::ShowTopLeftMessage(const FString& Msg, FLinearColor Color, float Duration)
+{
+	TopLeftMessage = Msg;
+	TopLeftColor = Color;
+
+	FTimerHandle ClearMsgTimer;
+	GetWorld()->GetTimerManager().SetTimer(ClearMsgTimer, [this]() {
+		TopLeftMessage = TEXT("");
+		}, Duration, false);
 }

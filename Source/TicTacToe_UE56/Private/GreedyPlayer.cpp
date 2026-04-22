@@ -121,7 +121,7 @@ TArray<FVector2D> AGreedyPlayer::FindGreedyPath(FVector2D Start, FVector2D Targe
 
 void AGreedyPlayer::OnTurn()
 {
-	UE_LOG(LogTemp, Warning, TEXT("[Greedy AI] E' il mio turno! Inizializzazione..."));
+	UE_LOG(LogTemp, Warning, TEXT("[Greedy AI] E' il mio turno!"));
 
 	GetWorld()->GetTimerManager().SetTimer(AI_TurnTimerHandle, [this]()
 		{

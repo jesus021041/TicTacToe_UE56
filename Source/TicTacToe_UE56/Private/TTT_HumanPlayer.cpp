@@ -51,7 +51,7 @@ void ATTT_HumanPlayer::SetupPlayerInputComponent(UInputComponent* PlayerInputCom
 void ATTT_HumanPlayer::OnTurn()
 {
 	IsMyTurn = true;
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("Your Turn"));
+	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("Your Turn"));
 	GameInstance->SetTurnMessage(TEXT("Human Turn"));
 }
 
@@ -80,7 +80,6 @@ void ATTT_HumanPlayer::OnClick()
 		{
 			if (CurrTile->GetTileStatus() == ETileStatus::EMPTY)
 			{
-				// GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("clicked"));
 				CurrTile->SetTileStatus(PlayerNumber, ETileStatus::OCCUPIED);
 				FVector SpawnPosition = CurrTile->GetActorLocation();
 				ATTT_GameMode* GameMode = Cast<ATTT_GameMode>(GetWorld()->GetAuthGameMode());

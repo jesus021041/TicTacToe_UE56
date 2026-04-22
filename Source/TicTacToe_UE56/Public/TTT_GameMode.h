@@ -158,4 +158,17 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Score")
 	int32 CurrentP1Score = 0;
+
+	//Visualizzare i msg:
+	// Variabile che conterrà il testo da mostrare (letta dal Widget)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
+	FString TopLeftMessage;
+
+	// Variabile che conterrà il colore del testo (letta dal Widget)
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI")
+	FLinearColor TopLeftColor;
+
+	// Dichiarazione della funzione che useremo nel .cpp
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void ShowTopLeftMessage(const FString& Msg, FLinearColor Color, float Duration);
 };
