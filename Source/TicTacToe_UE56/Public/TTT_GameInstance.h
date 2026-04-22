@@ -8,28 +8,34 @@
 
 class APawn;
 /**
- * 
- */
+ * */
 UCLASS()
 class TICTACTOE_UE56_API UTTT_GameInstance : public UGameInstance
 {
 	GENERATED_BODY()
-	
+
 public:
+	//Confing iniziali -> menu
+
+	//Variabile per la grandezza della griglia
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config")
+	int32 CustomGridSize = 25; //da impostazione
+
+	// Classe dell'IA selezionata
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config")
+	TSubclassOf<APawn> SelectedAIClass;
+
 	// score value for human player
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Score")
 	int32 ScoreHumanPlayer = 0;
 
 	// score value for AI player
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Score")
 	int32 ScoreAiPlayer = 0;
 
 	// message to show every turn
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Score")
 	FString CurrentTurnMessage = "Current Player";
-
-	UPROPERTY(BlueprintReadWrite)
-	TSubclassOf<APawn> SelectedAIClass;
 
 	// increment the score for human player
 	void IncrementScoreHumanPlayer();

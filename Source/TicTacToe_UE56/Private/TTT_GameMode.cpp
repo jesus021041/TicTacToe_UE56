@@ -31,9 +31,21 @@ void ATTT_GameMode::BeginPlay()
 	ATTT_HumanPlayer* HumanPlayer = GetWorld()->GetFirstPlayerController()->GetPawn<ATTT_HumanPlayer>();
 	if (!IsValid(HumanPlayer)) return;
 
+	UTTT_GameInstance* GI = Cast<UTTT_GameInstance>(GetGameInstance());
+
 	if (GridData)
 	{
-		FieldSize = GridData->GridSize;
+		//Se  > 0 ->si usa quello.
+		//Altrimenti usiamo il default.(25)
+		if (GI && GI->CustomGridSize > 0)
+		{
+			FieldSize = GI->CustomGridSize;
+		}
+		else
+		{
+			FieldSize = GridData->GridSize;
+		}
+
 		TileSize = GridData->TileSize;
 		CellPadding = GridData->CellPadding;
 	}
@@ -41,8 +53,13 @@ void ATTT_GameMode::BeginPlay()
 	if (GameFieldClass != nullptr)
 	{
 		GField = GetWorld()->SpawnActor<AGameField>(GameFieldClass);
-	}
 
+		//misura nuova:
+		if (GField)
+		{
+			GField->Size = FieldSize;
+		}
+	}
 	float CameraPosX = ((TileSize * FieldSize) + ((FieldSize - 1) * TileSize * CellPadding)) * 0.5f;
 	FVector CameraPos(CameraPosX, CameraPosX, 4000.0f);
 	HumanPlayer->SetActorLocationAndRotation(CameraPos, FRotationMatrix::MakeFromX(FVector(0, 0, -1)).Rotator());

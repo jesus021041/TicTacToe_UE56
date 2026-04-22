@@ -22,9 +22,28 @@ void AGameField::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
 
+	//Intro x parametri:
+	//->GRANDEZZA DINAMICA
+	Size = 0;
+
+	// 1. Proviamo a leggere il valore scelto nel menu
+	if (GetWorld() && GetWorld()->GetGameInstance())
+	{
+		UTTT_GameInstance* GI = Cast<UTTT_GameInstance>(GetWorld()->GetGameInstance());
+		if (GI && GI->CustomGridSize > 0)
+		{
+			Size = GI->CustomGridSize;
+		}
+	}
+
 	if (GridData)
 	{
-		Size = GridData->GridSize;
+		// 2. Se non c'era nessun valore (o siamo fermi nell'editor) -> usare: default (25*25)
+		if (Size <= 0)
+		{
+			Size = GridData->GridSize;
+		}
+
 		WinSize = Size;
 		TileSize = GridData->TileSize;
 		CellPadding = GridData->CellPadding;
@@ -44,7 +63,7 @@ void AGameField::BeginPlay()
 
 	RandomSeed = FDateTime::Now().GetTicks() % 9999999;
 
-	UE_LOG(LogTemp, Warning, TEXT("-----> INIZIO GENERAZIONE MAPPA 25x25 <-----"));
+	UE_LOG(LogTemp, Warning, TEXT("-----> INIZIO GENERAZIONE MAPPA %dx%d <-----"), Size, Size);
 	UE_LOG(LogTemp, Warning, TEXT("Seed Casuale Generato dal Tempo: %d"), RandomSeed);
 	UE_LOG(LogTemp, Warning, TEXT("----------------------------------------------"));
 
@@ -253,7 +272,6 @@ void AGameField::GenerateField()
 				//BLUEPRINT DEI COLORI
 				Obj->SetElevationLevel(ElevationLevel);
 
-				// L'acqua (Livello 0) nasce direttamente come ostacolo invalicabile
 				if (ElevationLevel == 0)
 				{
 					Obj->SetTileStatus(NOT_ASSIGNED, ETileStatus::OCCUPIED);
@@ -272,10 +290,16 @@ void AGameField::GenerateField()
 
 void AGameField::SpawnTowers()
 {
+	//->Alg adattivo x piazzare
+	// Si adatta automaticamente alla variabile "Size" della griglia.
+	int32 CenterXY = Size / 2;
+	int32 LeftX = Size / 4;
+	int32 RightX = Size - (Size / 4);
+
 	TArray<FVector2D> IdealTowerPositions = {
-		FVector2D(12, 12),
-		FVector2D(5, 12),
-		FVector2D(19, 12)
+		FVector2D(CenterXY, CenterXY), // Centro esatto
+		FVector2D(LeftX, CenterXY),    // Lato Sinistro
+		FVector2D(RightX, CenterXY)    // Lato Destro
 	};
 
 	for (int32 i = 0; i < IdealTowerPositions.Num(); i++)
@@ -285,14 +309,16 @@ void AGameField::SpawnTowers()
 
 		if (BestTile)
 		{
+			//La cella contenente la Torre -> un Ostacolo Fisico.
 			BestTile->SetTileStatus(NOT_ASSIGNED, ETileStatus::OCCUPIED);
 
 			if (TowerClass != nullptr)
 			{
 				FVector SpawnLocation = BestTile->GetActorLocation();
-				SpawnLocation.Z += 50.0f;
+				SpawnLocation.Z += 80.0f;
 				GetWorld()->SpawnActor<AActor>(TowerClass, SpawnLocation, FRotator::ZeroRotator);
 			}
+			//Tag -> x trovare le torri ++ facile
 			BestTile->Tags.Add(FName("TowerTile"));
 		}
 	}

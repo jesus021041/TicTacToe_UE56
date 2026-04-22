@@ -58,21 +58,19 @@ void ATTT_HumanPlayer::OnTurn()
 void ATTT_HumanPlayer::OnWin()
 {
 	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("You Win!"));
-	GameInstance->SetTurnMessage(TEXT("Human Wins!"));
+	//GameInstance->SetTurnMessage(TEXT("Human Wins!"));
 	GameInstance->IncrementScoreHumanPlayer();
 }
 
 void ATTT_HumanPlayer::OnLose()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("You Lose!"));
+	//GEngine->AddOnScreenDebugMessage(-1, 5.f, FColor::Blue, TEXT("You Lose!"));
 	GameInstance->SetTurnMessage(TEXT("Human Loses!"));
 }
 
 void ATTT_HumanPlayer::OnClick()
 {
-	//Structure containing information about one hit of a trace, such as point of impact and surface normal at that point
 	FHitResult Hit = FHitResult(ForceInit);
-	// GetHitResultUnderCursor function sends a ray from the mouse position and gives the corresponding hit results
 	GetWorld()->GetFirstPlayerController()->GetHitResultUnderCursor(ECollisionChannel::ECC_Pawn, true, Hit);
 	if (Hit.bBlockingHit && IsMyTurn)
 	{
