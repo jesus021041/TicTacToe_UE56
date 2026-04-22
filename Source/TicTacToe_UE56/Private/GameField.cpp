@@ -61,7 +61,24 @@ void AGameField::BeginPlay()
 {
 	Super::BeginPlay();
 
-	RandomSeed = FDateTime::Now().GetTicks() % 9999999;
+	//SEED DINAMICO
+	RandomSeed = 0;
+
+	//I. Verifica se l'utente ha inserito un seed nel menu
+	if (GetWorld() && GetWorld()->GetGameInstance())
+	{
+		UTTT_GameInstance* GI = Cast<UTTT_GameInstance>(GetWorld()->GetGameInstance());
+		if (GI && GI->CustomSeed > 0)
+		{
+			RandomSeed = GI->CustomSeed;
+		}
+	}
+
+	//II. Se l'utente ha lasciato 0 -> CASUALE
+	if (RandomSeed <= 0)
+	{
+		RandomSeed = FDateTime::Now().GetTicks() % 9999999;
+	}
 
 	UE_LOG(LogTemp, Warning, TEXT("-----> INIZIO GENERAZIONE MAPPA %dx%d <-----"), Size, Size);
 	UE_LOG(LogTemp, Warning, TEXT("Seed Casuale Generato dal Tempo: %d"), RandomSeed);

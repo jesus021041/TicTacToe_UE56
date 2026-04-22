@@ -62,4 +62,9 @@ public:
 	// set the turn message
 	UFUNCTION(BlueprintCallable)
 	void SetTurnMessage(FString Message);
+
+	// Variabile per il Seed personalizzato 
+	//se 0 => Casuale
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Config")
+	int32 CustomSeed = 0;
 };
