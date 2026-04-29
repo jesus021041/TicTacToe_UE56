@@ -1,5 +1,5 @@
 
-# Simulatore Strategico a Turni 3D
+# Simulatore Strategico a Turni
 
 **Unreal Engine 5.6 | C++ & Blueprints**
 
